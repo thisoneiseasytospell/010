@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>010 Totems</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.166.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="loading-screen">
+      <h1>010 Totems</h1>
+    </div>
+    <div id="intro-overlay">
+      <video
+        id="intro-video"
+        src="./demo.mp4"
+        autoplay
+        muted
+        loop
+        playsinline
+      ></video>
+      <div id="intro-cursor-prompt">CLICK TO ENTER</div>
+    </div>
+    <div id="scene-container"></div>
+    <div id="ui-overlay">
+      <h1>010 Totems</h1>
+      <p id="mode-indicator">C&S WdKA 2025 Albert Kozikowski</p>
+    </div>
+    <div id="solo-info-panel" aria-live="polite">
+      <div class="solo-info-inner">
+        <h2 id="solo-info-title"></h2>
+        <div id="solo-info-body"></div>
+      </div>
+    </div>
+    <svg
+      id="grid-mode-icon"
+      viewBox="0 0 50 20"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <rect x="0" y="0" width="8" height="8" rx="1"></rect>
+      <rect x="10" y="0" width="8" height="8" rx="1"></rect>
+      <rect x="20" y="0" width="8" height="8" rx="1"></rect>
+      <rect x="30" y="0" width="8" height="8" rx="1"></rect>
+      <rect x="40" y="0" width="8" height="8" rx="1"></rect>
+      <rect x="0" y="12" width="8" height="8" rx="1"></rect>
+      <rect x="10" y="12" width="8" height="8" rx="1"></rect>
+      <rect x="20" y="12" width="8" height="8" rx="1"></rect>
+      <rect x="30" y="12" width="8" height="8" rx="1"></rect>
+      <rect x="40" y="12" width="8" height="8" rx="1"></rect>
+    </svg>
+    <script type="module" src="./scripts/main.js"></script>
+  </body>
+</html>
