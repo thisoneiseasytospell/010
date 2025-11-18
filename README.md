@@ -27,7 +27,7 @@ Then open `http://localhost:5173` in a modern browser (Chrome, Edge, Safari 17+,
 ## Deploying / publishing
 
 1. Commit everything in this folder (`git init && git add -A && git commit -m "Initial commit"`).
-2. Point the repo at GitHub: `git remote add origin git@github.com:thisoneiseasytospell/010.git`.
+2. Point the repo at GitHub: `git remote add origin https://github.com/thisoneiseasytospell/010.git`.
 3. Replace the remote's contents: `git push --force origin main`.
 
 That `git push --force` wipes whatever is currently on GitHub and uploads these local files, which is exactly what you asked for.
