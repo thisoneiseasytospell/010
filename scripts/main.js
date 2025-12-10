@@ -70,13 +70,13 @@ function getGridConfig() {
   const isPortrait = aspect < 1;
 
   if (isPortrait) {
-    // Mobile portrait: 2 columns, 5 rows - smaller models to prevent overlap
+    // Mobile portrait: 2 columns, 5 rows - smaller models for phones
     return {
       cols: 2,
       rows: 5,
-      cellWidth: 2.8,
-      cellHeight: 2.0,
-      modelSize: 1.3
+      cellWidth: 2.4,
+      cellHeight: 1.8,
+      modelSize: 0.65
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -123,7 +123,7 @@ function updateGridLayout() {
       // Reset scale and recompute
       const currentScale = innerObj.scale.x;
       const isPortrait = window.innerWidth / window.innerHeight < 1;
-      const targetScale = isPortrait ? 0.446 : 1; // Ratio of 1.3/2.916
+      const targetScale = isPortrait ? 0.223 : 1; // Ratio of 0.65/2.916
 
       // Only rescale if layout changed significantly
       if (Math.abs(currentScale - targetScale) > 0.01) {
@@ -236,6 +236,80 @@ function handleGyro(event) {
   gyro.gamma = normalizedGamma;
 }
 
+// Accelerometer for shake/motion physics
+let motionEnabled = false;
+const motion = { x: 0, y: 0, z: 0 }; // acceleration values
+const modelVelocity = { x: 0, y: 0 }; // model movement velocity
+const modelOffset = { x: 0, y: 0 }; // current model offset from center
+const BOX_BOUNDS = 1.5; // invisible box size
+const MOTION_DAMPING = 0.92; // velocity decay
+const MOTION_SENSITIVITY = 0.008; // how much acceleration affects velocity
+const BOUNCE_FACTOR = 0.6; // energy retained on bounce
+
+function requestMotionPermission() {
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    // iOS 13+ requires permission
+    DeviceMotionEvent.requestPermission()
+      .then((response) => {
+        if (response === 'granted') {
+          motionEnabled = true;
+          window.addEventListener('devicemotion', handleMotion);
+        }
+      })
+      .catch(console.error);
+  } else if ('DeviceMotionEvent' in window) {
+    // Non-iOS devices
+    motionEnabled = true;
+    window.addEventListener('devicemotion', handleMotion);
+  }
+}
+
+function handleMotion(event) {
+  if (!motionEnabled) return;
+
+  const accel = event.accelerationIncludingGravity;
+  if (!accel) return;
+
+  // Get acceleration (invert x for natural feel)
+  motion.x = (accel.x || 0);
+  motion.y = (accel.y || 0);
+  motion.z = (accel.z || 0);
+}
+
+function updateMotionPhysics() {
+  if (!motionEnabled || isGridMode) return;
+
+  // Apply acceleration to velocity
+  modelVelocity.x += motion.x * MOTION_SENSITIVITY;
+  modelVelocity.y -= motion.y * MOTION_SENSITIVITY; // invert Y for screen coords
+
+  // Apply damping
+  modelVelocity.x *= MOTION_DAMPING;
+  modelVelocity.y *= MOTION_DAMPING;
+
+  // Update position
+  modelOffset.x += modelVelocity.x;
+  modelOffset.y += modelVelocity.y;
+
+  // Bounce off invisible box walls
+  if (modelOffset.x > BOX_BOUNDS) {
+    modelOffset.x = BOX_BOUNDS;
+    modelVelocity.x = -modelVelocity.x * BOUNCE_FACTOR;
+  } else if (modelOffset.x < -BOX_BOUNDS) {
+    modelOffset.x = -BOX_BOUNDS;
+    modelVelocity.x = -modelVelocity.x * BOUNCE_FACTOR;
+  }
+
+  if (modelOffset.y > BOX_BOUNDS) {
+    modelOffset.y = BOX_BOUNDS;
+    modelVelocity.y = -modelVelocity.y * BOUNCE_FACTOR;
+  } else if (modelOffset.y < -BOX_BOUNDS) {
+    modelOffset.y = -BOX_BOUNDS;
+    modelVelocity.y = -modelVelocity.y * BOUNCE_FACTOR;
+  }
+}
+
 // Touch drag for solo mode rotation
 let touchDragging = false;
 let touchStartX = 0;
@@ -305,9 +379,12 @@ function onTouchMove(event) {
 function onTouchEnd(event) {
   if (introActive) {
     exitIntro();
-    // Request gyro permission on first touch (required by iOS)
+    // Request gyro and motion permissions on first touch (required by iOS)
     if (isTouchDevice && !gyroPermissionGranted) {
       requestGyroPermission();
+    }
+    if (isTouchDevice && !motionEnabled) {
+      requestMotionPermission();
     }
     return;
   }
@@ -403,6 +480,12 @@ function switchToModel(index) {
   touchDragTargetX = 0;
   touchDragTargetY = 0;
 
+  // Reset motion physics when switching models
+  modelOffset.x = 0;
+  modelOffset.y = 0;
+  modelVelocity.x = 0;
+  modelVelocity.y = 0;
+
   if (!isGridMode) {
     // Solo mode: Show/hide main models with random initial rotation
     mainModels.forEach((model, i) => {
@@ -460,13 +543,14 @@ function toggleMode() {
     });
 
     // Show main model centered (no gallery)
+    const isPortrait = window.innerWidth / window.innerHeight < 1;
     mainModels.forEach((model, i) => {
       if (model.object) {
         model.object.visible = (i === currentModelIndex);
-        // Center the object vertically when in solo mode
+        // Center the object - on mobile center horizontally, on desktop use offset
         if (model.object.visible) {
-          model.object.position.x = model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET;
-          model.object.position.y = model.object.userData.soloYPos;
+          model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
+          model.object.position.y = isPortrait ? 0.5 : model.object.userData.soloYPos;
         }
       }
     });
@@ -493,18 +577,20 @@ function updateModelInfoDisplay() {
 
   soloInfoBody.innerHTML = '';
 
-  if (!currentModel || !info) {
+  if (!currentModel) {
     soloInfoTitle.textContent = '';
     soloInfoPanel.classList.remove('visible');
     return;
   }
 
-  const heading = (typeof info.heading === 'string' && info.heading.trim().length > 0)
+  const heading = (info && typeof info.heading === 'string' && info.heading.trim().length > 0)
     ? info.heading
     : (currentModel.title || '');
   soloInfoTitle.textContent = heading;
 
-  if (Array.isArray(info.lines)) {
+  // On mobile (portrait), only show title, no description
+  const isPortrait = window.innerWidth / window.innerHeight < 1;
+  if (!isPortrait && info && Array.isArray(info.lines)) {
     info.lines.forEach((line) => {
       if (typeof line !== 'string' || !line.trim()) return;
       const paragraph = document.createElement('p');
@@ -1275,6 +1361,18 @@ function animate() {
     const mainModel = mainModels[currentModelIndex];
     if (mainModel && mainModel.object) {
       const innerObj = mainModel.object.userData.innerObject;
+
+      // Update motion physics (shake to move model in box)
+      updateMotionPhysics();
+
+      // Apply motion offset to model position (only on mobile in solo mode)
+      const isPortrait = window.innerWidth / window.innerHeight < 1;
+      if (motionEnabled && isPortrait) {
+        const baseX = 0;
+        const baseY = 0.5;
+        mainModel.object.position.x = baseX + modelOffset.x;
+        mainModel.object.position.y = baseY + modelOffset.y;
+      }
 
       // Vertical rotation limits to prevent seeing bottom of models
       const MAX_TILT_UP = Math.PI * 0.15;   // ~27 degrees - can tilt up slightly
