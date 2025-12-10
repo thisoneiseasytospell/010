@@ -14,13 +14,6 @@
     "autoRotateSpeed": 0.25
   },
   {
-    "id": "compressed-1763391157878-laugh",
-    "title": "Compressed 1763391157878 Laugh",
-    "glb": "objs/compressed_1763391157878_laugh.glb",
-    "scale": 1,
-    "autoRotateSpeed": 0.25
-  },
-  {
     "id": "compressed-1763391167896-bob",
     "title": "Compressed 1763391167896 Bob",
     "glb": "objs/compressed_1763391167896_bob.glb",
