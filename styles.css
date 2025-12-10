@@ -220,7 +220,26 @@ body {
 
 @media (max-width: 600px) {
   #solo-info-panel {
-    top: 68%;
+    top: auto;
+    bottom: 8%;
+    transform: translate(-50%, 0);
+    width: min(92vw, 400px);
+    text-align: center;
+  }
+
+  .solo-info-inner {
+    align-items: center;
+    text-align: center;
+  }
+
+  #solo-info-title {
+    text-align: center;
+    font-size: clamp(0.9rem, 4vw, 1.2rem);
+  }
+
+  #solo-info-body p {
+    font-size: clamp(0.65rem, 2.5vw, 0.85rem);
+    text-align: center;
   }
 }
 
@@ -237,6 +256,11 @@ body {
 
   #intro-cursor-prompt.visible {
     transform: translate(-50%, 100px) !important;
+  }
+
+  /* Hide grid mode icon on mobile - tap model to go back */
+  #grid-mode-icon {
+    display: none;
   }
 }
 

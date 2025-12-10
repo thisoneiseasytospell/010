@@ -70,13 +70,13 @@ function getGridConfig() {
   const isPortrait = aspect < 1;
 
   if (isPortrait) {
-    // Mobile portrait: 2 columns, 5 rows
+    // Mobile portrait: 2 columns, 5 rows - smaller models to prevent overlap
     return {
       cols: 2,
       rows: 5,
-      cellWidth: 3.2,
-      cellHeight: 2.2,
-      modelSize: 1.8
+      cellWidth: 2.8,
+      cellHeight: 2.0,
+      modelSize: 1.3
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -123,7 +123,7 @@ function updateGridLayout() {
       // Reset scale and recompute
       const currentScale = innerObj.scale.x;
       const isPortrait = window.innerWidth / window.innerHeight < 1;
-      const targetScale = isPortrait ? 0.617 : 1; // Ratio of 1.8/2.916
+      const targetScale = isPortrait ? 0.446 : 1; // Ratio of 1.3/2.916
 
       // Only rescale if layout changed significantly
       if (Math.abs(currentScale - targetScale) > 0.01) {
@@ -224,15 +224,26 @@ function handleGyro(event) {
   const beta = event.beta || 0;
   const gamma = event.gamma || 0;
 
-  // When phone is held vertically, beta is around 90
-  // Map beta 45-135 to -1 to 1 for vertical tilt (front/back)
-  const normalizedBeta = THREE.MathUtils.clamp((beta - 90) / 45, -1, 1);
+  // Comfortable holding angle: 50-60 degrees from horizontal
+  // Map beta centered around 55 degrees (comfortable phone holding angle)
+  // Range: 10-100 degrees maps to -1 to 1
+  const comfortableBeta = 55; // Center point for comfortable holding
+  const normalizedBeta = THREE.MathUtils.clamp((beta - comfortableBeta) / 45, -1, 1);
   // Map gamma -45 to 45 to -1 to 1 for horizontal tilt (left/right)
   const normalizedGamma = THREE.MathUtils.clamp(gamma / 45, -1, 1);
 
   gyro.beta = normalizedBeta;
   gyro.gamma = normalizedGamma;
 }
+
+// Touch drag for solo mode rotation
+let touchDragging = false;
+let touchStartX = 0;
+let touchStartY = 0;
+let touchDragRotationX = 0;
+let touchDragRotationY = 0;
+let touchDragTargetX = 0;
+let touchDragTargetY = 0;
 
 function updateMousePosition(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -247,12 +258,47 @@ function updateMousePosition(event) {
   updateIntroPrompt(event);
 }
 
-// Click handler - advance to next model
+// Touch handlers
+let touchStartTime = 0;
+let lastTapTime = 0;
+const TAP_THRESHOLD = 200; // ms - taps shorter than this trigger interaction
+const DOUBLE_TAP_THRESHOLD = 300; // ms - taps within this time are double tap
+const DRAG_THRESHOLD = 10; // pixels - movement beyond this is a drag
+
 function onTouchStart(event) {
   if (event.touches.length === 1) {
     const touch = event.touches[0];
     mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    touchStartTime = Date.now();
+    touchDragging = false;
+  }
+}
+
+function onTouchMove(event) {
+  if (introActive) return;
+  if (event.touches.length !== 1) return;
+
+  const touch = event.touches[0];
+  const deltaX = touch.clientX - touchStartX;
+  const deltaY = touch.clientY - touchStartY;
+
+  // Check if this is a drag
+  if (Math.abs(deltaX) > DRAG_THRESHOLD || Math.abs(deltaY) > DRAG_THRESHOLD) {
+    touchDragging = true;
+  }
+
+  // In solo mode, use touch drag to rotate model
+  if (!isGridMode && touchDragging) {
+    // Prevent scrolling when dragging
+    event.preventDefault();
+
+    // Map drag to rotation (full screen drag = full rotation)
+    touchDragTargetY = (deltaX / window.innerWidth) * Math.PI * 1.5;
+    touchDragTargetX = -(deltaY / window.innerHeight) * Math.PI * 0.8;
   }
 }
 
@@ -266,13 +312,33 @@ function onTouchEnd(event) {
     return;
   }
 
-  // Use changedTouches for the touch that ended
-  if (event.changedTouches.length > 0) {
+  const touchDuration = Date.now() - touchStartTime;
+  const wasTap = !touchDragging && touchDuration < TAP_THRESHOLD;
+
+  // Reset drag state
+  touchDragging = false;
+  // Keep the rotation where it ended
+  touchDragRotationX += touchDragTargetX;
+  touchDragRotationY += touchDragTargetY;
+  touchDragTargetX = 0;
+  touchDragTargetY = 0;
+
+  // Only trigger interaction on tap, not drag
+  if (wasTap && event.changedTouches.length > 0) {
     const touch = event.changedTouches[0];
     mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
 
-    // Simulate click behavior
+    const now = Date.now();
+    const timeSinceLastTap = now - lastTapTime;
+    lastTapTime = now;
+
+    // Double tap in solo mode goes back to grid
+    if (!isGridMode && timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
+      toggleMode();
+      return;
+    }
+
     handleInteraction();
   }
 }
@@ -330,6 +396,12 @@ function onClick(event) {
 // Switch to different model
 function switchToModel(index) {
   currentModelIndex = index;
+
+  // Reset touch drag rotation when switching models
+  touchDragRotationX = 0;
+  touchDragRotationY = 0;
+  touchDragTargetX = 0;
+  touchDragTargetY = 0;
 
   if (!isGridMode) {
     // Solo mode: Show/hide main models with random initial rotation
@@ -695,6 +767,7 @@ function updateThumbnailHighlights() {
 window.addEventListener('mousemove', updateMousePosition);
 window.addEventListener('click', onClick);
 window.addEventListener('touchstart', onTouchStart, { passive: true });
+window.addEventListener('touchmove', onTouchMove, { passive: false });
 window.addEventListener('touchend', onTouchEnd);
 
 // iOS Safari: also add touch listeners directly to intro overlay and video
@@ -1182,36 +1255,58 @@ function animate() {
         inputY = mouse.y;
       }
 
+      // Vertical rotation limits to prevent seeing bottom of models
+      const MAX_TILT_UP = Math.PI * 0.12;   // ~22 degrees
+      const MAX_TILT_DOWN = Math.PI * 0.25; // ~45 degrees
+
       const targetRotationY = baseRotationY + inputX * Math.PI * 0.4;
-      const targetRotationX = baseRotationX - inputY * Math.PI * 0.4;
+      let targetRotationX = baseRotationX - inputY * Math.PI * 0.4;
+      // Clamp vertical rotation relative to base
+      const relativeX = targetRotationX - baseRotationX;
+      const clampedRelativeX = THREE.MathUtils.clamp(relativeX, -MAX_TILT_DOWN, MAX_TILT_UP);
+      targetRotationX = baseRotationX + clampedRelativeX;
+
       innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.1);
       innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.1);
       innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
     });
   } else {
-    // SOLO MODE: Rotate main model with gyroscope (mobile) or mouse (desktop)
+    // SOLO MODE: Rotate main model with touch drag, gyroscope, or mouse
     const mainModel = mainModels[currentModelIndex];
     if (mainModel && mainModel.object) {
       const innerObj = mainModel.object.userData.innerObject;
 
-      // Get input from gyroscope or mouse
-      let inputX, inputY;
-      const hasGyroInput = gyroEnabled && (Math.abs(gyro.gamma) > 0.01 || Math.abs(gyro.beta) > 0.01);
+      // Vertical rotation limits to prevent seeing bottom of models
+      const MAX_TILT_UP = Math.PI * 0.15;   // ~27 degrees - can tilt up slightly
+      const MAX_TILT_DOWN = Math.PI * 0.35; // ~63 degrees - can tilt down more
 
-      if (hasGyroInput) {
-        inputX = gyro.gamma; // left/right tilt
-        inputY = gyro.beta;  // front/back tilt
+      // Get input from touch drag, gyroscope, or mouse
+      let targetRotationX, targetRotationY;
+      const hasGyroInput = gyroEnabled && (Math.abs(gyro.gamma) > 0.01 || Math.abs(gyro.beta) > 0.01);
+      const hasTouchDragInput = touchDragging || (touchDragRotationX !== 0 || touchDragRotationY !== 0);
+
+      if (hasTouchDragInput) {
+        // Touch drag takes priority on mobile
+        targetRotationY = touchDragRotationY + touchDragTargetY;
+        targetRotationX = touchDragRotationX + touchDragTargetX;
+      } else if (hasGyroInput) {
+        targetRotationY = gyro.gamma * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
+        targetRotationX = -gyro.beta * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
+      } else if (mouseIsMoving) {
+        targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
+        targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
       } else {
-        inputX = mouse.x;
-        inputY = mouse.y;
+        targetRotationX = 0;
+        targetRotationY = 0;
       }
 
-      const hasActiveInput = hasGyroInput || mouseIsMoving;
+      // Clamp vertical rotation to prevent seeing bottom
+      targetRotationX = THREE.MathUtils.clamp(targetRotationX, -MAX_TILT_DOWN, MAX_TILT_UP);
+
+      const hasActiveInput = hasGyroInput || mouseIsMoving || hasTouchDragInput;
 
       // Check if transitioning from initial random rotation
       if (mainModel.object.userData.isTransitioning && innerObj) {
-        const targetRotationY = hasActiveInput ? inputX * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR : 0;
-        const targetRotationX = hasActiveInput ? -inputY * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR : 0;
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, SOLO_MODEL_TRANSITION_SPEED);
@@ -1224,9 +1319,7 @@ function animate() {
           mainModel.object.userData.isTransitioning = false;
         }
       } else if (innerObj && hasActiveInput) {
-        // Gyroscope or mouse control
-        const targetRotationY = inputX * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        const targetRotationX = -inputY * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
+        // Active input control (touch drag, gyro, or mouse)
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.12);
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.12);
       } else if (innerObj && !mainModel.object.userData.isTransitioning) {
