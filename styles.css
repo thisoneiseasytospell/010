@@ -221,6 +221,22 @@ body {
   }
 }
 
+/* Mobile intro overlay */
+@media (pointer: coarse) {
+  #intro-cursor-prompt {
+    /* On touch devices, center the prompt instead of following cursor */
+    position: fixed;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, 100px) !important;
+    opacity: 1 !important;
+  }
+
+  #intro-cursor-prompt.visible {
+    transform: translate(-50%, 100px) !important;
+  }
+}
+
 #loading-screen {
   position: fixed;
   top: 0;

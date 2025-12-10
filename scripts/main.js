@@ -64,6 +64,76 @@ if (gridModeIcon) {
 const DEFAULT_GRID_ROTATION_DEG = 15;
 const GRID_ROTATION_OVERRIDE_DEG = {};
 
+// Grid layout configuration
+function getGridConfig() {
+  const aspect = window.innerWidth / window.innerHeight;
+  const isPortrait = aspect < 1;
+
+  if (isPortrait) {
+    // Mobile portrait: 2 columns, 5 rows
+    return {
+      cols: 2,
+      rows: 5,
+      cellWidth: 3.2,
+      cellHeight: 2.2,
+      modelSize: 1.8
+    };
+  } else {
+    // Desktop/landscape: 5 columns, 2 rows
+    return {
+      cols: 5,
+      rows: 2,
+      cellWidth: 3.96,
+      cellHeight: 4.32,
+      modelSize: 2.916
+    };
+  }
+}
+
+function getGridPosition(modelIndex) {
+  const config = getGridConfig();
+  const { cols, cellWidth, cellHeight } = config;
+  const rows = Math.ceil(models.length / cols);
+
+  const gridWidth = cols * cellWidth;
+  const gridHeight = rows * cellHeight;
+
+  const col = modelIndex % cols;
+  const row = Math.floor(modelIndex / cols);
+
+  const x = (col * cellWidth) - (gridWidth / 2) + (cellWidth / 2);
+  const gridTop = gridHeight / 2;
+  const y = gridTop - (row + 1) * cellHeight;
+
+  return { x, y };
+}
+
+function updateGridLayout() {
+  const config = getGridConfig();
+
+  gridModels.forEach((entry, index) => {
+    if (!entry || !entry.object) return;
+
+    const pos = getGridPosition(index);
+    entry.object.position.set(pos.x, pos.y, 0);
+
+    // Update model scale for mobile
+    const innerObj = entry.object.userData.innerObject;
+    if (innerObj) {
+      // Reset scale and recompute
+      const currentScale = innerObj.scale.x;
+      const isPortrait = window.innerWidth / window.innerHeight < 1;
+      const targetScale = isPortrait ? 0.617 : 1; // Ratio of 1.8/2.916
+
+      // Only rescale if layout changed significantly
+      if (Math.abs(currentScale - targetScale) > 0.01) {
+        const scaleFactor = targetScale / currentScale;
+        innerObj.scale.multiplyScalar(scaleFactor);
+      }
+    }
+  });
+}
+
 // Scene setup
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf5f5f0);
@@ -116,6 +186,54 @@ let mouseIsMoving = false;
 let mouseIdleTimer = null;
 const raycaster = new THREE.Raycaster();
 
+// Mobile / touch detection
+const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const isMobile = isTouchDevice && window.innerWidth <= 900;
+
+// Gyroscope support
+let gyroEnabled = false;
+let gyroPermissionGranted = false;
+const gyro = { beta: 0, gamma: 0 }; // beta = front/back tilt, gamma = left/right tilt
+
+function requestGyroPermission() {
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // iOS 13+ requires permission
+    DeviceOrientationEvent.requestPermission()
+      .then((response) => {
+        if (response === 'granted') {
+          gyroPermissionGranted = true;
+          gyroEnabled = true;
+          window.addEventListener('deviceorientation', handleGyro);
+        }
+      })
+      .catch(console.error);
+  } else if ('DeviceOrientationEvent' in window) {
+    // Non-iOS devices
+    gyroPermissionGranted = true;
+    gyroEnabled = true;
+    window.addEventListener('deviceorientation', handleGyro);
+  }
+}
+
+function handleGyro(event) {
+  if (!gyroEnabled) return;
+  // beta: -180 to 180 (front/back tilt, phone flat = 0 when horizontal, ~90 when vertical)
+  // gamma: -90 to 90 (left/right tilt)
+  // Normalize to -1 to 1 range similar to mouse
+  const beta = event.beta || 0;
+  const gamma = event.gamma || 0;
+
+  // When phone is held vertically, beta is around 90
+  // Map beta 45-135 to -1 to 1 for vertical tilt (front/back)
+  const normalizedBeta = THREE.MathUtils.clamp((beta - 90) / 45, -1, 1);
+  // Map gamma -45 to 45 to -1 to 1 for horizontal tilt (left/right)
+  const normalizedGamma = THREE.MathUtils.clamp(gamma / 45, -1, 1);
+
+  gyro.beta = normalizedBeta;
+  gyro.gamma = normalizedGamma;
+}
+
 function updateMousePosition(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -130,16 +248,39 @@ function updateMousePosition(event) {
 }
 
 // Click handler - advance to next model
-function onClick(event) {
+function onTouchStart(event) {
+  if (event.touches.length === 1) {
+    const touch = event.touches[0];
+    mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+  }
+}
+
+function onTouchEnd(event) {
   if (introActive) {
     exitIntro();
+    // Request gyro permission on first touch (required by iOS)
+    if (isTouchDevice && !gyroPermissionGranted) {
+      requestGyroPermission();
+    }
     return;
   }
 
+  // Use changedTouches for the touch that ended
+  if (event.changedTouches.length > 0) {
+    const touch = event.changedTouches[0];
+    mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+
+    // Simulate click behavior
+    handleInteraction();
+  }
+}
+
+function handleInteraction() {
   if (models.length === 0) return;
 
   if (isGridMode) {
-    updateMousePosition(event);
     raycaster.setFromCamera(mouse, camera);
 
     const gridObjects = gridModels
@@ -168,6 +309,22 @@ function onClick(event) {
 
   const newIndex = (currentModelIndex + 1) % models.length;
   switchToModel(newIndex);
+}
+
+function onClick(event) {
+  if (introActive) {
+    exitIntro();
+    // Request gyro permission on click for iOS (needs user gesture)
+    if (isTouchDevice && !gyroPermissionGranted) {
+      requestGyroPermission();
+    }
+    return;
+  }
+
+  if (models.length === 0) return;
+
+  updateMousePosition(event);
+  handleInteraction();
 }
 
 // Switch to different model
@@ -415,6 +572,14 @@ function updateIntroPrompt(event) {
     return;
   }
 
+  // On touch devices, always show centered prompt
+  if (isTouchDevice) {
+    if (!introPrompt.classList.contains('visible')) {
+      introPrompt.classList.add('visible');
+    }
+    return;
+  }
+
   const offsetX = 18;
   const offsetY = 28;
   const promptWidth = introPrompt.offsetWidth || 0;
@@ -529,6 +694,8 @@ function updateThumbnailHighlights() {
 
 window.addEventListener('mousemove', updateMousePosition);
 window.addEventListener('click', onClick);
+window.addEventListener('touchstart', onTouchStart, { passive: true });
+window.addEventListener('touchend', onTouchEnd);
 
 // Keyboard navigation
 window.addEventListener('keydown', (event) => {
@@ -761,22 +928,9 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   const group = new THREE.Group();
   group.add(object3d);
 
-  // 5x2 grid layout - fit screen
-  const cols = 5;
-  const rows = 2;
-  const cellWidth = 3.96; // Cell spacing tightened by 10%
-  const cellHeight = 4.32; // Cell spacing tightened by 10%
-  const gridWidth = cols * cellWidth;
-  const gridHeight = rows * cellHeight;
-
-  const col = modelIndex % cols;
-  const row = Math.floor(modelIndex / cols);
-
-  const x = (col * cellWidth) - (gridWidth / 2) + (cellWidth / 2);
-  const gridTop = gridHeight / 2;
-  const y = gridTop - (row + 1) * cellHeight;
-
-  group.position.set(x, y, 0);
+  // Responsive grid layout: 5x2 on desktop, 2x5 on mobile
+  const gridPosition = getGridPosition(modelIndex);
+  group.position.set(gridPosition.x, gridPosition.y, 0);
   group.visible = isGridMode; // Match current mode so intro toggles work even before load completes
   group.userData.modelIndex = modelIndex;
   group.userData.isGrid = true;
@@ -970,6 +1124,12 @@ async function init() {
 
 init();
 
+// Show intro prompt immediately on touch devices
+if (isTouchDevice && introPrompt) {
+  introPrompt.textContent = 'TAP TO ENTER';
+  introPrompt.classList.add('visible');
+}
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
@@ -1001,23 +1161,46 @@ function animate() {
         return;
       }
 
-      // All models rotate based on global mouse position
-      const targetRotationY = baseRotationY + mouse.x * Math.PI * 0.4;
-      const targetRotationX = baseRotationX - mouse.y * Math.PI * 0.4;
+      // All models rotate based on gyroscope (mobile) or mouse (desktop)
+      let inputX, inputY;
+      if (gyroEnabled) {
+        inputX = gyro.gamma; // left/right tilt
+        inputY = gyro.beta;  // front/back tilt
+      } else {
+        inputX = mouse.x;
+        inputY = mouse.y;
+      }
+
+      const targetRotationY = baseRotationY + inputX * Math.PI * 0.4;
+      const targetRotationX = baseRotationX - inputY * Math.PI * 0.4;
       innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.1);
       innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.1);
       innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
     });
   } else {
-    // SOLO MODE: Rotate main model with mouse
+    // SOLO MODE: Rotate main model with gyroscope (mobile) or mouse (desktop)
     const mainModel = mainModels[currentModelIndex];
     if (mainModel && mainModel.object) {
       const innerObj = mainModel.object.userData.innerObject;
 
+      // Get input from gyroscope or mouse
+      let inputX, inputY;
+      const hasGyroInput = gyroEnabled && (Math.abs(gyro.gamma) > 0.01 || Math.abs(gyro.beta) > 0.01);
+
+      if (hasGyroInput) {
+        inputX = gyro.gamma; // left/right tilt
+        inputY = gyro.beta;  // front/back tilt
+      } else {
+        inputX = mouse.x;
+        inputY = mouse.y;
+      }
+
+      const hasActiveInput = hasGyroInput || mouseIsMoving;
+
       // Check if transitioning from initial random rotation
       if (mainModel.object.userData.isTransitioning && innerObj) {
-        const targetRotationY = mouseIsMoving ? mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR : 0;
-        const targetRotationX = mouseIsMoving ? -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR : 0;
+        const targetRotationY = hasActiveInput ? inputX * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR : 0;
+        const targetRotationX = hasActiveInput ? -inputY * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR : 0;
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, SOLO_MODEL_TRANSITION_SPEED);
@@ -1029,14 +1212,14 @@ function animate() {
           innerObj.rotation.set(targetRotationX, targetRotationY, 0);
           mainModel.object.userData.isTransitioning = false;
         }
-      } else if (innerObj && mouseIsMoving) {
-        // Mouse control
-        const targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        const targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
+      } else if (innerObj && hasActiveInput) {
+        // Gyroscope or mouse control
+        const targetRotationY = inputX * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
+        const targetRotationX = -inputY * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.12);
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.12);
       } else if (innerObj && !mainModel.object.userData.isTransitioning) {
-        // Return to neutral when mouse stops (if not transitioning)
+        // Return to neutral when input stops (if not transitioning)
         innerObj.rotation.x *= 0.94;
         innerObj.rotation.y *= 0.94;
       }
@@ -1058,4 +1241,7 @@ window.addEventListener('resize', () => {
   camera.bottom = frustumSize / -2;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+
+  // Update grid layout for orientation changes
+  updateGridLayout();
 });
