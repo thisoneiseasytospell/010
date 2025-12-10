@@ -697,6 +697,17 @@ window.addEventListener('click', onClick);
 window.addEventListener('touchstart', onTouchStart, { passive: true });
 window.addEventListener('touchend', onTouchEnd);
 
+// iOS Safari: also add touch listeners directly to intro overlay and video
+// because touch events on video elements can behave differently
+if (introOverlay) {
+  introOverlay.addEventListener('click', onClick);
+  introOverlay.addEventListener('touchend', onTouchEnd);
+}
+if (introVideo) {
+  introVideo.addEventListener('click', onClick);
+  introVideo.addEventListener('touchend', onTouchEnd);
+}
+
 // Keyboard navigation
 window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
