@@ -232,12 +232,21 @@ function handleGyro(event) {
 // Accelerometer for shake/motion physics
 let motionEnabled = false;
 const motion = { x: 0, y: 0, z: 0 }; // acceleration values
-const modelVelocity = { x: 0, y: 0 }; // model movement velocity
-const modelOffset = { x: 0, y: 0 }; // current model offset from center
+const modelVelocity = { x: 0, y: 0 }; // model movement velocity (solo mode)
+const modelOffset = { x: 0, y: 0 }; // current model offset from center (solo mode)
 const BOX_BOUNDS = 1.5; // invisible box size
 const MOTION_DAMPING = 0.92; // velocity decay
 const MOTION_SENSITIVITY = 0.008; // how much acceleration affects velocity
 const BOUNCE_FACTOR = 0.6; // energy retained on bounce
+
+// Grid shake physics
+let gridShakeActive = false;
+let shakeDetectionBuffer = [];
+const SHAKE_THRESHOLD = 25; // acceleration magnitude to trigger shake
+const SHAKE_WINDOW = 500; // ms to detect shake pattern
+const GRID_BOX_BOUNDS_X = 4; // wider box for grid
+const GRID_BOX_BOUNDS_Y = 5; // taller box for grid
+const gridModelPhysics = []; // per-model velocity and offset
 
 function requestMotionPermission() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -264,10 +273,147 @@ function handleMotion(event) {
   const accel = event.accelerationIncludingGravity;
   if (!accel) return;
 
-  // Get acceleration (invert x for natural feel)
+  // Get acceleration
   motion.x = (accel.x || 0);
   motion.y = (accel.y || 0);
   motion.z = (accel.z || 0);
+
+  // Detect shake gesture for grid mode
+  if (isGridMode) {
+    const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
+    const now = Date.now();
+
+    // Add to buffer
+    shakeDetectionBuffer.push({ magnitude, time: now });
+
+    // Remove old entries
+    shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
+
+    // Check for shake pattern (multiple high accelerations)
+    const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
+    if (highAccelCount >= 3 && !gridShakeActive) {
+      activateGridShake();
+    }
+  }
+}
+
+function activateGridShake() {
+  gridShakeActive = true;
+  shakeDetectionBuffer = [];
+
+  // Initialize physics for each grid model if not already done
+  gridModels.forEach((entry, index) => {
+    if (!gridModelPhysics[index]) {
+      gridModelPhysics[index] = {
+        velocityX: 0,
+        velocityY: 0,
+        offsetX: 0,
+        offsetY: 0,
+        baseX: 0,
+        baseY: 0
+      };
+    }
+    // Store current position as base
+    if (entry && entry.object) {
+      gridModelPhysics[index].baseX = entry.object.position.x;
+      gridModelPhysics[index].baseY = entry.object.position.y;
+      gridModelPhysics[index].offsetX = 0;
+      gridModelPhysics[index].offsetY = 0;
+      gridModelPhysics[index].velocityX = (Math.random() - 0.5) * 0.5; // Random initial velocity
+      gridModelPhysics[index].velocityY = (Math.random() - 0.5) * 0.5;
+    }
+  });
+}
+
+function updateGridShakePhysics() {
+  if (!gridShakeActive || !isGridMode) return;
+
+  const isPortrait = window.innerWidth / window.innerHeight < 1;
+  if (!isPortrait) {
+    // Only on mobile
+    gridShakeActive = false;
+    return;
+  }
+
+  let anyMoving = false;
+
+  gridModels.forEach((entry, index) => {
+    if (!entry || !entry.object) return;
+    const physics = gridModelPhysics[index];
+    if (!physics) return;
+
+    // Apply acceleration to velocity
+    physics.velocityX += motion.x * MOTION_SENSITIVITY * 1.5;
+    physics.velocityY -= motion.y * MOTION_SENSITIVITY * 1.5;
+
+    // Apply damping
+    physics.velocityX *= MOTION_DAMPING;
+    physics.velocityY *= MOTION_DAMPING;
+
+    // Update offset
+    physics.offsetX += physics.velocityX;
+    physics.offsetY += physics.velocityY;
+
+    // Bounce off invisible box walls
+    if (physics.offsetX > GRID_BOX_BOUNDS_X) {
+      physics.offsetX = GRID_BOX_BOUNDS_X;
+      physics.velocityX = -physics.velocityX * BOUNCE_FACTOR;
+    } else if (physics.offsetX < -GRID_BOX_BOUNDS_X) {
+      physics.offsetX = -GRID_BOX_BOUNDS_X;
+      physics.velocityX = -physics.velocityX * BOUNCE_FACTOR;
+    }
+
+    if (physics.offsetY > GRID_BOX_BOUNDS_Y) {
+      physics.offsetY = GRID_BOX_BOUNDS_Y;
+      physics.velocityY = -physics.velocityY * BOUNCE_FACTOR;
+    } else if (physics.offsetY < -GRID_BOX_BOUNDS_Y) {
+      physics.offsetY = -GRID_BOX_BOUNDS_Y;
+      physics.velocityY = -physics.velocityY * BOUNCE_FACTOR;
+    }
+
+    // Apply position
+    entry.object.position.x = physics.baseX + physics.offsetX;
+    entry.object.position.y = physics.baseY + physics.offsetY;
+
+    // Check if still moving
+    if (Math.abs(physics.velocityX) > 0.01 || Math.abs(physics.velocityY) > 0.01) {
+      anyMoving = true;
+    }
+  });
+
+  // Deactivate when all models have stopped
+  if (!anyMoving && Math.abs(motion.x) < 1 && Math.abs(motion.y) < 1) {
+    // Gradually return to grid positions
+    let allBack = true;
+    gridModels.forEach((entry, index) => {
+      if (!entry || !entry.object) return;
+      const physics = gridModelPhysics[index];
+      if (!physics) return;
+
+      physics.offsetX *= 0.95;
+      physics.offsetY *= 0.95;
+      entry.object.position.x = physics.baseX + physics.offsetX;
+      entry.object.position.y = physics.baseY + physics.offsetY;
+
+      if (Math.abs(physics.offsetX) > 0.05 || Math.abs(physics.offsetY) > 0.05) {
+        allBack = false;
+      }
+    });
+
+    if (allBack) {
+      gridShakeActive = false;
+      // Snap back to exact positions
+      gridModels.forEach((entry, index) => {
+        if (!entry || !entry.object) return;
+        const physics = gridModelPhysics[index];
+        if (!physics) return;
+        entry.object.position.x = physics.baseX;
+        entry.object.position.y = physics.baseY;
+        physics.offsetX = 0;
+        physics.offsetY = 0;
+      });
+    }
+  }
 }
 
 function updateMotionPhysics() {
@@ -1314,6 +1460,9 @@ function animate() {
   requestAnimationFrame(animate);
 
   if (isGridMode) {
+    // Update grid shake physics if active
+    updateGridShakePhysics();
+
     // GRID MODE: Mouse-follow rotation for all grid models
     gridModels.forEach((model) => {
       const group = model.object;
