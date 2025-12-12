@@ -117,19 +117,12 @@ function updateGridLayout() {
     const pos = getGridPosition(index);
     entry.object.position.set(pos.x, pos.y, 0);
 
-    // Update model scale for mobile
+    // Update model scale based on current config
     const innerObj = entry.object.userData.innerObject;
-    if (innerObj) {
-      // Reset scale and recompute
-      const currentScale = innerObj.scale.x;
-      const isPortrait = window.innerWidth / window.innerHeight < 1;
-      const targetScale = isPortrait ? 0.223 : 1; // Ratio of 0.65/2.916
-
-      // Only rescale if layout changed significantly
-      if (Math.abs(currentScale - targetScale) > 0.01) {
-        const scaleFactor = targetScale / currentScale;
-        innerObj.scale.multiplyScalar(scaleFactor);
-      }
+    if (innerObj && entry.object.userData.baseScale) {
+      const baseScale = entry.object.userData.baseScale;
+      const targetScale = baseScale * (config.modelSize / 2.916); // Scale relative to desktop size
+      innerObj.scale.setScalar(targetScale);
     }
   });
 }
@@ -486,6 +479,15 @@ function switchToModel(index) {
   modelVelocity.x = 0;
   modelVelocity.y = 0;
 
+  // Reset all model positions to their base when switching
+  const isPortrait = window.innerWidth / window.innerHeight < 1;
+  mainModels.forEach((model) => {
+    if (model.object) {
+      model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
+      model.object.position.y = isPortrait ? 0.5 : (model.object.userData.soloYPos || 0);
+    }
+  });
+
   if (!isGridMode) {
     // Solo mode: Show/hide main models with random initial rotation
     mainModels.forEach((model, i) => {
@@ -544,14 +546,19 @@ function toggleMode() {
 
     // Show main model centered (no gallery)
     const isPortrait = window.innerWidth / window.innerHeight < 1;
+    // Reset motion physics when entering solo mode
+    modelOffset.x = 0;
+    modelOffset.y = 0;
+    modelVelocity.x = 0;
+    modelVelocity.y = 0;
+
     mainModels.forEach((model, i) => {
       if (model.object) {
         model.object.visible = (i === currentModelIndex);
         // Center the object - on mobile center horizontally, on desktop use offset
-        if (model.object.visible) {
-          model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
-          model.object.position.y = isPortrait ? 0.5 : model.object.userData.soloYPos;
-        }
+        // Reset ALL models to their base position
+        model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
+        model.object.position.y = isPortrait ? 0.5 : (model.object.userData.soloYPos || 0);
       }
     });
   }
@@ -660,15 +667,15 @@ function exitIntro() {
 
   clearIntroPromptTimers();
 
+  // Always enter grid mode after intro (for both desktop and mobile)
   if (!isGridMode) {
     toggleMode();
   }
 
-  if (isGridMode) {
-    gridIntroAnimationId += 1;
-    gridIntroRandomizationPending = true;
-    triggerGridIntroRandomization();
-  }
+  // Trigger grid intro animation
+  gridIntroAnimationId += 1;
+  gridIntroRandomizationPending = true;
+  triggerGridIntroRandomization();
 
   updateModelInfoDisplay();
 }
@@ -1069,7 +1076,8 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   object3d.position.sub(initialCenter);
 
   const maxDimension = Math.max(initialSize.x, initialSize.y, initialSize.z) || 1;
-  const desiredSize = 2.916; // Grid model size reduced by an additional 10%
+  const gridConfig = getGridConfig();
+  const desiredSize = gridConfig.modelSize; // Use responsive model size
   const computedScale = desiredSize / maxDimension;
   const manualScale = typeof modelConfig.scale === 'number' ? modelConfig.scale : 1;
   object3d.scale.multiplyScalar(computedScale * manualScale);
@@ -1107,6 +1115,7 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   group.userData.innerObject = object3d;
   group.userData.baseRotationY = object3d.rotation.y;
   group.userData.baseRotationX = object3d.rotation.x;
+  group.userData.baseScale = object3d.scale.x; // Store for responsive rescaling
 
   scene.add(group);
   gridModels[modelIndex] = { object: group };
@@ -1342,8 +1351,8 @@ function animate() {
       }
 
       // Vertical rotation limits to prevent seeing bottom of models
-      const MAX_TILT_UP = Math.PI * 0.12;   // ~22 degrees
-      const MAX_TILT_DOWN = Math.PI * 0.25; // ~45 degrees
+      const MAX_TILT_UP = Math.PI * 0.08;   // ~14 degrees - very limited upward tilt
+      const MAX_TILT_DOWN = Math.PI * 0.12; // ~22 degrees - limited downward tilt
 
       const targetRotationY = baseRotationY + inputX * Math.PI * 0.4;
       let targetRotationX = baseRotationX - inputY * Math.PI * 0.4;
@@ -1375,8 +1384,8 @@ function animate() {
       }
 
       // Vertical rotation limits to prevent seeing bottom of models
-      const MAX_TILT_UP = Math.PI * 0.15;   // ~27 degrees - can tilt up slightly
-      const MAX_TILT_DOWN = Math.PI * 0.35; // ~63 degrees - can tilt down more
+      const MAX_TILT_UP = Math.PI * 0.06;   // ~11 degrees - very limited upward tilt
+      const MAX_TILT_DOWN = Math.PI * 0.15; // ~27 degrees - limited downward tilt
 
       // Get input from touch drag, gyroscope, or mouse
       let targetRotationX, targetRotationY;
