@@ -251,6 +251,11 @@ const COLLISION_DAMPING = 0.7; // energy lost on collision
 const TURBULENCE_STRENGTH = 0.015; // random jitter
 const gridModelPhysics = []; // per-model velocity and offset
 
+// Clone models for shake mode (extra fun!)
+const SHAKE_CLONE_COUNT = 15; // Number of clone models to add when shaking
+const shakeCloneModels = []; // Clone 3D objects
+const shakeClonePhysics = []; // Physics for clones
+
 function requestMotionPermission() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
       typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -327,6 +332,75 @@ function activateGridShake() {
       gridModelPhysics[index].velocityY = (Math.random() - 0.5) * 0.3;
     }
   });
+
+  // Spawn clone models for extra chaos!
+  spawnShakeClones();
+}
+
+function spawnShakeClones() {
+  // Remove any existing clones first
+  shakeCloneModels.forEach((clone) => {
+    if (clone) {
+      scene.remove(clone);
+      clone.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((mat) => mat.dispose());
+        }
+      });
+    }
+  });
+  shakeCloneModels.length = 0;
+  shakeClonePhysics.length = 0;
+
+  // Create clones from random existing grid models
+  for (let i = 0; i < SHAKE_CLONE_COUNT; i++) {
+    const sourceIndex = Math.floor(Math.random() * gridModels.length);
+    const sourceEntry = gridModels[sourceIndex];
+    if (!sourceEntry || !sourceEntry.object) continue;
+
+    const innerObj = sourceEntry.object.userData.innerObject;
+    if (!innerObj) continue;
+
+    // Clone the inner object
+    const clonedInner = innerObj.clone(true);
+
+    // Apply materials to clone
+    clonedInner.traverse((child) => {
+      if (child.isMesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        child.material = materials.map((mat) => mat.clone());
+      }
+    });
+
+    // Create group for clone
+    const cloneGroup = new THREE.Group();
+    cloneGroup.add(clonedInner);
+
+    // Random starting position within the box
+    const startX = (Math.random() - 0.5) * GRID_BOX_BOUNDS_X * 1.5;
+    const startY = (Math.random() - 0.5) * GRID_BOX_BOUNDS_Y * 1.5;
+    cloneGroup.position.set(startX, startY, 0);
+    cloneGroup.userData.isShakeClone = true;
+    cloneGroup.userData.innerObject = clonedInner;
+
+    // Random initial rotation
+    clonedInner.rotation.x = (Math.random() - 0.5) * Math.PI;
+    clonedInner.rotation.y = (Math.random() - 0.5) * Math.PI * 2;
+    clonedInner.rotation.z = (Math.random() - 0.5) * Math.PI * 0.5;
+
+    scene.add(cloneGroup);
+    shakeCloneModels.push(cloneGroup);
+
+    // Initialize physics for clone
+    shakeClonePhysics.push({
+      velocityX: (Math.random() - 0.5) * 0.6, // Higher initial velocity for clones
+      velocityY: (Math.random() - 0.5) * 0.6,
+      posX: startX,
+      posY: startY
+    });
+  }
 }
 
 function updateGridShakePhysics() {
@@ -335,17 +409,32 @@ function updateGridShakePhysics() {
   const isPortrait = window.innerWidth / window.innerHeight < 1;
   if (!isPortrait) {
     gridShakeActive = false;
+    removeShakeClones();
     return;
   }
 
   let anyMoving = false;
 
-  // First pass: update velocities and positions
-  gridModels.forEach((entry, index) => {
-    if (!entry || !entry.object) return;
-    const physics = gridModelPhysics[index];
-    if (!physics) return;
+  // Build combined list of all physics objects (originals + clones)
+  const allPhysics = [];
+  const allObjects = [];
 
+  gridModels.forEach((entry, index) => {
+    if (entry && entry.object && gridModelPhysics[index]) {
+      allPhysics.push(gridModelPhysics[index]);
+      allObjects.push(entry.object);
+    }
+  });
+
+  shakeCloneModels.forEach((clone, index) => {
+    if (clone && shakeClonePhysics[index]) {
+      allPhysics.push(shakeClonePhysics[index]);
+      allObjects.push(clone);
+    }
+  });
+
+  // First pass: update velocities and positions for ALL objects
+  allPhysics.forEach((physics) => {
     // Apply device motion to velocity
     physics.velocityX += motion.x * MOTION_SENSITIVITY * 2;
     physics.velocityY -= motion.y * MOTION_SENSITIVITY * 2;
@@ -363,16 +452,12 @@ function updateGridShakePhysics() {
     physics.posY += physics.velocityY;
   });
 
-  // Second pass: collision detection between models
-  for (let i = 0; i < gridModels.length; i++) {
-    const entryA = gridModels[i];
-    const physicsA = gridModelPhysics[i];
-    if (!entryA || !entryA.object || !physicsA) continue;
+  // Second pass: collision detection between ALL models (including clones)
+  for (let i = 0; i < allPhysics.length; i++) {
+    const physicsA = allPhysics[i];
 
-    for (let j = i + 1; j < gridModels.length; j++) {
-      const entryB = gridModels[j];
-      const physicsB = gridModelPhysics[j];
-      if (!entryB || !entryB.object || !physicsB) continue;
+    for (let j = i + 1; j < allPhysics.length; j++) {
+      const physicsB = allPhysics[j];
 
       // Calculate distance between models
       const dx = physicsB.posX - physicsA.posX;
@@ -418,11 +503,7 @@ function updateGridShakePhysics() {
   }
 
   // Third pass: wall collisions and apply final positions
-  gridModels.forEach((entry, index) => {
-    if (!entry || !entry.object) return;
-    const physics = gridModelPhysics[index];
-    if (!physics) return;
-
+  allPhysics.forEach((physics, index) => {
     // Bounce off box walls
     if (physics.posX > GRID_BOX_BOUNDS_X) {
       physics.posX = GRID_BOX_BOUNDS_X;
@@ -441,8 +522,11 @@ function updateGridShakePhysics() {
     }
 
     // Apply to 3D object
-    entry.object.position.x = physics.posX;
-    entry.object.position.y = physics.posY;
+    const obj = allObjects[index];
+    if (obj) {
+      obj.position.x = physics.posX;
+      obj.position.y = physics.posY;
+    }
 
     // Check if still moving
     if (Math.abs(physics.velocityX) > 0.005 || Math.abs(physics.velocityY) > 0.005) {
@@ -470,6 +554,21 @@ function updateGridShakePhysics() {
       }
     });
 
+    // Fade out clones while returning to base
+    shakeCloneModels.forEach((clone) => {
+      if (clone) {
+        clone.traverse((child) => {
+          if (child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material];
+            materials.forEach((mat) => {
+              mat.transparent = true;
+              mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0, 0.1);
+            });
+          }
+        });
+      }
+    });
+
     if (allBack) {
       gridShakeActive = false;
       gridModels.forEach((entry, index) => {
@@ -481,8 +580,27 @@ function updateGridShakePhysics() {
         physics.posX = physics.baseX;
         physics.posY = physics.baseY;
       });
+      // Remove clones when shake ends
+      removeShakeClones();
     }
   }
+}
+
+function removeShakeClones() {
+  shakeCloneModels.forEach((clone) => {
+    if (clone) {
+      scene.remove(clone);
+      clone.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((mat) => mat.dispose());
+        }
+      });
+    }
+  });
+  shakeCloneModels.length = 0;
+  shakeClonePhysics.length = 0;
 }
 
 function updateMotionPhysics() {
@@ -749,6 +867,10 @@ function toggleMode() {
     });
   } else {
     // SOLO MODE
+    // Clean up grid shake state and clones
+    gridShakeActive = false;
+    removeShakeClones();
+
     // Hide grid mode elements
     gridModels.forEach(model => {
       if (model.object) model.object.visible = false;
@@ -1584,26 +1706,15 @@ function animate() {
       innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
     });
   } else {
-    // SOLO MODE: Rotate main model with touch drag, gyroscope, or mouse
+    // SOLO MODE: Model pinned at center, full rotation inspection via drag or gyro
     const mainModel = mainModels[currentModelIndex];
     if (mainModel && mainModel.object) {
       const innerObj = mainModel.object.userData.innerObject;
 
-      // Update motion physics (shake to move model in box)
-      updateMotionPhysics();
-
-      // Apply motion offset to model position (only on mobile in solo mode)
+      // Keep model centered (no position movement)
       const isPortrait = window.innerWidth / window.innerHeight < 1;
-      if (motionEnabled && isPortrait) {
-        const baseX = 0;
-        const baseY = 0.5;
-        mainModel.object.position.x = baseX + modelOffset.x;
-        mainModel.object.position.y = baseY + modelOffset.y;
-      }
-
-      // Vertical rotation limits - see more top, less bottom
-      const MAX_TILT_UP = Math.PI * 0.20;   // ~36 degrees - can see top nicely
-      const MAX_TILT_DOWN = Math.PI * 0.08; // ~14 degrees - very limited bottom view
+      mainModel.object.position.x = isPortrait ? 0 : (mainModel.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
+      mainModel.object.position.y = isPortrait ? 0.5 : (mainModel.object.userData.soloYPos || 0);
 
       // Get input from touch drag, gyroscope, or mouse
       let targetRotationX, targetRotationY;
@@ -1611,12 +1722,13 @@ function animate() {
       const hasTouchDragInput = touchDragging || (touchDragRotationX !== 0 || touchDragRotationY !== 0);
 
       if (hasTouchDragInput) {
-        // Touch drag takes priority on mobile
+        // Touch drag - full rotation control
         targetRotationY = touchDragRotationY + touchDragTargetY;
         targetRotationX = touchDragRotationX + touchDragTargetX;
       } else if (hasGyroInput) {
-        targetRotationY = gyro.gamma * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        targetRotationX = -gyro.beta * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
+        // Gyro control - amplified for full inspection
+        targetRotationY = gyro.gamma * Math.PI * 0.5;
+        targetRotationX = -gyro.beta * Math.PI * 0.4;
       } else if (mouseIsMoving) {
         targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
         targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
@@ -1624,9 +1736,6 @@ function animate() {
         targetRotationX = 0;
         targetRotationY = 0;
       }
-
-      // Clamp vertical rotation to prevent seeing bottom
-      targetRotationX = THREE.MathUtils.clamp(targetRotationX, -MAX_TILT_DOWN, MAX_TILT_UP);
 
       const hasActiveInput = hasGyroInput || mouseIsMoving || hasTouchDragInput;
 
@@ -1648,7 +1757,7 @@ function animate() {
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.12);
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.12);
       } else if (innerObj && !mainModel.object.userData.isTransitioning) {
-        // Return to neutral when input stops (if not transitioning)
+        // Return to neutral when input stops
         innerObj.rotation.x *= 0.94;
         innerObj.rotation.y *= 0.94;
       }
