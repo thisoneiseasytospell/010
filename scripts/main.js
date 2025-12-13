@@ -70,13 +70,13 @@ function getGridConfig() {
   const isPortrait = aspect < 1;
 
   if (isPortrait) {
-    // Mobile portrait: 2 columns, 5 rows - smaller models for phones
+    // Mobile portrait: 2 columns, 5 rows
     return {
       cols: 2,
       rows: 5,
-      cellWidth: 2.4,
-      cellHeight: 1.8,
-      modelSize: 0.65
+      cellWidth: 2.8,
+      cellHeight: 2.0,
+      modelSize: 1.4
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -242,10 +242,13 @@ const BOUNCE_FACTOR = 0.6; // energy retained on bounce
 // Grid shake physics
 let gridShakeActive = false;
 let shakeDetectionBuffer = [];
-const SHAKE_THRESHOLD = 25; // acceleration magnitude to trigger shake
+const SHAKE_THRESHOLD = 20; // acceleration magnitude to trigger shake
 const SHAKE_WINDOW = 500; // ms to detect shake pattern
-const GRID_BOX_BOUNDS_X = 4; // wider box for grid
-const GRID_BOX_BOUNDS_Y = 5; // taller box for grid
+const GRID_BOX_BOUNDS_X = 3.5; // box width
+const GRID_BOX_BOUNDS_Y = 5.5; // box height
+const MODEL_COLLISION_RADIUS = 0.8; // collision sphere radius per model
+const COLLISION_DAMPING = 0.7; // energy lost on collision
+const TURBULENCE_STRENGTH = 0.015; // random jitter
 const gridModelPhysics = []; // per-model velocity and offset
 
 function requestMotionPermission() {
@@ -301,26 +304,27 @@ function activateGridShake() {
   gridShakeActive = true;
   shakeDetectionBuffer = [];
 
-  // Initialize physics for each grid model if not already done
+  // Initialize physics for each grid model
   gridModels.forEach((entry, index) => {
     if (!gridModelPhysics[index]) {
       gridModelPhysics[index] = {
         velocityX: 0,
         velocityY: 0,
-        offsetX: 0,
-        offsetY: 0,
+        posX: 0,
+        posY: 0,
         baseX: 0,
         baseY: 0
       };
     }
-    // Store current position as base
+    // Store current grid position as base, start at current position
     if (entry && entry.object) {
-      gridModelPhysics[index].baseX = entry.object.position.x;
-      gridModelPhysics[index].baseY = entry.object.position.y;
-      gridModelPhysics[index].offsetX = 0;
-      gridModelPhysics[index].offsetY = 0;
-      gridModelPhysics[index].velocityX = (Math.random() - 0.5) * 0.5; // Random initial velocity
-      gridModelPhysics[index].velocityY = (Math.random() - 0.5) * 0.5;
+      const gridPos = getGridPosition(index);
+      gridModelPhysics[index].baseX = gridPos.x;
+      gridModelPhysics[index].baseY = gridPos.y;
+      gridModelPhysics[index].posX = entry.object.position.x;
+      gridModelPhysics[index].posY = entry.object.position.y;
+      gridModelPhysics[index].velocityX = (Math.random() - 0.5) * 0.3; // Random initial velocity
+      gridModelPhysics[index].velocityY = (Math.random() - 0.5) * 0.3;
     }
   });
 }
@@ -330,87 +334,152 @@ function updateGridShakePhysics() {
 
   const isPortrait = window.innerWidth / window.innerHeight < 1;
   if (!isPortrait) {
-    // Only on mobile
     gridShakeActive = false;
     return;
   }
 
   let anyMoving = false;
 
+  // First pass: update velocities and positions
   gridModels.forEach((entry, index) => {
     if (!entry || !entry.object) return;
     const physics = gridModelPhysics[index];
     if (!physics) return;
 
-    // Apply acceleration to velocity
-    physics.velocityX += motion.x * MOTION_SENSITIVITY * 1.5;
-    physics.velocityY -= motion.y * MOTION_SENSITIVITY * 1.5;
+    // Apply device motion to velocity
+    physics.velocityX += motion.x * MOTION_SENSITIVITY * 2;
+    physics.velocityY -= motion.y * MOTION_SENSITIVITY * 2;
+
+    // Add turbulence (random jitter)
+    physics.velocityX += (Math.random() - 0.5) * TURBULENCE_STRENGTH;
+    physics.velocityY += (Math.random() - 0.5) * TURBULENCE_STRENGTH;
 
     // Apply damping
     physics.velocityX *= MOTION_DAMPING;
     physics.velocityY *= MOTION_DAMPING;
 
-    // Update offset
-    physics.offsetX += physics.velocityX;
-    physics.offsetY += physics.velocityY;
+    // Update position
+    physics.posX += physics.velocityX;
+    physics.posY += physics.velocityY;
+  });
 
-    // Bounce off invisible box walls
-    if (physics.offsetX > GRID_BOX_BOUNDS_X) {
-      physics.offsetX = GRID_BOX_BOUNDS_X;
-      physics.velocityX = -physics.velocityX * BOUNCE_FACTOR;
-    } else if (physics.offsetX < -GRID_BOX_BOUNDS_X) {
-      physics.offsetX = -GRID_BOX_BOUNDS_X;
-      physics.velocityX = -physics.velocityX * BOUNCE_FACTOR;
+  // Second pass: collision detection between models
+  for (let i = 0; i < gridModels.length; i++) {
+    const entryA = gridModels[i];
+    const physicsA = gridModelPhysics[i];
+    if (!entryA || !entryA.object || !physicsA) continue;
+
+    for (let j = i + 1; j < gridModels.length; j++) {
+      const entryB = gridModels[j];
+      const physicsB = gridModelPhysics[j];
+      if (!entryB || !entryB.object || !physicsB) continue;
+
+      // Calculate distance between models
+      const dx = physicsB.posX - physicsA.posX;
+      const dy = physicsB.posY - physicsA.posY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = MODEL_COLLISION_RADIUS * 2;
+
+      // Check collision
+      if (dist < minDist && dist > 0) {
+        // Normalize collision vector
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // Relative velocity
+        const dvx = physicsA.velocityX - physicsB.velocityX;
+        const dvy = physicsA.velocityY - physicsB.velocityY;
+
+        // Relative velocity along collision normal
+        const dvn = dvx * nx + dvy * ny;
+
+        // Only resolve if objects are approaching
+        if (dvn > 0) {
+          // Impulse (assuming equal mass)
+          const impulse = dvn * COLLISION_DAMPING;
+
+          // Apply impulse
+          physicsA.velocityX -= impulse * nx;
+          physicsA.velocityY -= impulse * ny;
+          physicsB.velocityX += impulse * nx;
+          physicsB.velocityY += impulse * ny;
+        }
+
+        // Separate overlapping models
+        const overlap = minDist - dist;
+        const separationX = (overlap / 2) * nx;
+        const separationY = (overlap / 2) * ny;
+        physicsA.posX -= separationX;
+        physicsA.posY -= separationY;
+        physicsB.posX += separationX;
+        physicsB.posY += separationY;
+      }
+    }
+  }
+
+  // Third pass: wall collisions and apply final positions
+  gridModels.forEach((entry, index) => {
+    if (!entry || !entry.object) return;
+    const physics = gridModelPhysics[index];
+    if (!physics) return;
+
+    // Bounce off box walls
+    if (physics.posX > GRID_BOX_BOUNDS_X) {
+      physics.posX = GRID_BOX_BOUNDS_X;
+      physics.velocityX = -Math.abs(physics.velocityX) * BOUNCE_FACTOR;
+    } else if (physics.posX < -GRID_BOX_BOUNDS_X) {
+      physics.posX = -GRID_BOX_BOUNDS_X;
+      physics.velocityX = Math.abs(physics.velocityX) * BOUNCE_FACTOR;
     }
 
-    if (physics.offsetY > GRID_BOX_BOUNDS_Y) {
-      physics.offsetY = GRID_BOX_BOUNDS_Y;
-      physics.velocityY = -physics.velocityY * BOUNCE_FACTOR;
-    } else if (physics.offsetY < -GRID_BOX_BOUNDS_Y) {
-      physics.offsetY = -GRID_BOX_BOUNDS_Y;
-      physics.velocityY = -physics.velocityY * BOUNCE_FACTOR;
+    if (physics.posY > GRID_BOX_BOUNDS_Y) {
+      physics.posY = GRID_BOX_BOUNDS_Y;
+      physics.velocityY = -Math.abs(physics.velocityY) * BOUNCE_FACTOR;
+    } else if (physics.posY < -GRID_BOX_BOUNDS_Y) {
+      physics.posY = -GRID_BOX_BOUNDS_Y;
+      physics.velocityY = Math.abs(physics.velocityY) * BOUNCE_FACTOR;
     }
 
-    // Apply position
-    entry.object.position.x = physics.baseX + physics.offsetX;
-    entry.object.position.y = physics.baseY + physics.offsetY;
+    // Apply to 3D object
+    entry.object.position.x = physics.posX;
+    entry.object.position.y = physics.posY;
 
     // Check if still moving
-    if (Math.abs(physics.velocityX) > 0.01 || Math.abs(physics.velocityY) > 0.01) {
+    if (Math.abs(physics.velocityX) > 0.005 || Math.abs(physics.velocityY) > 0.005) {
       anyMoving = true;
     }
   });
 
-  // Deactivate when all models have stopped
-  if (!anyMoving && Math.abs(motion.x) < 1 && Math.abs(motion.y) < 1) {
-    // Gradually return to grid positions
+  // Deactivate and return to grid when motion stops
+  if (!anyMoving && Math.abs(motion.x) < 2 && Math.abs(motion.y) < 2) {
     let allBack = true;
     gridModels.forEach((entry, index) => {
       if (!entry || !entry.object) return;
       const physics = gridModelPhysics[index];
       if (!physics) return;
 
-      physics.offsetX *= 0.95;
-      physics.offsetY *= 0.95;
-      entry.object.position.x = physics.baseX + physics.offsetX;
-      entry.object.position.y = physics.baseY + physics.offsetY;
+      // Lerp back to base position
+      physics.posX = THREE.MathUtils.lerp(physics.posX, physics.baseX, 0.08);
+      physics.posY = THREE.MathUtils.lerp(physics.posY, physics.baseY, 0.08);
+      entry.object.position.x = physics.posX;
+      entry.object.position.y = physics.posY;
 
-      if (Math.abs(physics.offsetX) > 0.05 || Math.abs(physics.offsetY) > 0.05) {
+      const distToBase = Math.abs(physics.posX - physics.baseX) + Math.abs(physics.posY - physics.baseY);
+      if (distToBase > 0.1) {
         allBack = false;
       }
     });
 
     if (allBack) {
       gridShakeActive = false;
-      // Snap back to exact positions
       gridModels.forEach((entry, index) => {
         if (!entry || !entry.object) return;
         const physics = gridModelPhysics[index];
         if (!physics) return;
         entry.object.position.x = physics.baseX;
         entry.object.position.y = physics.baseY;
-        physics.offsetX = 0;
-        physics.offsetY = 0;
+        physics.posX = physics.baseX;
+        physics.posY = physics.baseY;
       });
     }
   }
@@ -1499,9 +1568,9 @@ function animate() {
         inputY = mouse.y;
       }
 
-      // Vertical rotation limits to prevent seeing bottom of models
-      const MAX_TILT_UP = Math.PI * 0.08;   // ~14 degrees - very limited upward tilt
-      const MAX_TILT_DOWN = Math.PI * 0.12; // ~22 degrees - limited downward tilt
+      // Vertical rotation limits - see more top, less bottom
+      const MAX_TILT_UP = Math.PI * 0.18;   // ~32 degrees - can see top nicely
+      const MAX_TILT_DOWN = Math.PI * 0.06; // ~11 degrees - very limited bottom view
 
       const targetRotationY = baseRotationY + inputX * Math.PI * 0.4;
       let targetRotationX = baseRotationX - inputY * Math.PI * 0.4;
@@ -1532,9 +1601,9 @@ function animate() {
         mainModel.object.position.y = baseY + modelOffset.y;
       }
 
-      // Vertical rotation limits to prevent seeing bottom of models
-      const MAX_TILT_UP = Math.PI * 0.06;   // ~11 degrees - very limited upward tilt
-      const MAX_TILT_DOWN = Math.PI * 0.15; // ~27 degrees - limited downward tilt
+      // Vertical rotation limits - see more top, less bottom
+      const MAX_TILT_UP = Math.PI * 0.20;   // ~36 degrees - can see top nicely
+      const MAX_TILT_DOWN = Math.PI * 0.08; // ~14 degrees - very limited bottom view
 
       // Get input from touch drag, gyroscope, or mouse
       let targetRotationX, targetRotationY;
