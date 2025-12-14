@@ -310,10 +310,6 @@ html, body {
 }
 
 #loading-bar-container {
-  position: absolute;
-  bottom: 4rem;
-  left: 50%;
-  transform: translateX(-50%);
   width: 200px;
   height: 2px;
   background: rgba(8, 9, 13, 0.1);
@@ -326,5 +322,5 @@ html, body {
   width: 0%;
   background: #08090d;
   transition: width 0.3s ease;
-  opacity: 0.4;
+  opacity: 0.6;
 }

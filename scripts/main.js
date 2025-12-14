@@ -209,24 +209,46 @@ function requestGyroPermission() {
   }
 }
 
+// Smoothed gyro values to prevent jitter
+let smoothedBeta = 0;
+let smoothedGamma = 0;
+const GYRO_SMOOTHING = 0.15; // Lower = smoother but slower response
+
 function handleGyro(event) {
   if (!gyroEnabled) return;
-  // beta: -180 to 180 (front/back tilt, phone flat = 0 when horizontal, ~90 when vertical)
-  // gamma: -90 to 90 (left/right tilt)
-  // Normalize to -1 to 1 range similar to mouse
-  const beta = event.beta || 0;
-  const gamma = event.gamma || 0;
+  try {
+    // beta: -180 to 180 (front/back tilt, phone flat = 0 when horizontal, ~90 when vertical)
+    // gamma: -90 to 90 (left/right tilt)
+    const beta = event.beta || 0;
+    const gamma = event.gamma || 0;
 
-  // Comfortable holding angle: 50-60 degrees from horizontal
-  // Map beta centered around 55 degrees (comfortable phone holding angle)
-  // Range: 10-100 degrees maps to -1 to 1
-  const comfortableBeta = 55; // Center point for comfortable holding
-  const normalizedBeta = THREE.MathUtils.clamp((beta - comfortableBeta) / 45, -1, 1);
-  // Map gamma -45 to 45 to -1 to 1 for horizontal tilt (left/right)
-  const normalizedGamma = THREE.MathUtils.clamp(gamma / 45, -1, 1);
+    // Skip invalid readings
+    if (!isFinite(beta) || !isFinite(gamma)) return;
 
-  gyro.beta = normalizedBeta;
-  gyro.gamma = normalizedGamma;
+    // Handle gimbal lock when phone is near upright (beta near 90 or -90)
+    // When beta is close to ±90, gamma becomes unreliable
+    const isNearUpright = Math.abs(Math.abs(beta) - 90) < 10;
+
+    // Comfortable holding angle: 50-60 degrees from horizontal
+    const comfortableBeta = 55;
+    let normalizedBeta = THREE.MathUtils.clamp((beta - comfortableBeta) / 45, -1, 1);
+
+    // Map gamma -45 to 45 to -1 to 1 for horizontal tilt (left/right)
+    // Reduce gamma influence when near upright to prevent wild swings
+    let normalizedGamma = THREE.MathUtils.clamp(gamma / 45, -1, 1);
+    if (isNearUpright) {
+      normalizedGamma *= 0.3; // Dampen gamma when near upright
+    }
+
+    // Apply smoothing to prevent jitter
+    smoothedBeta = THREE.MathUtils.lerp(smoothedBeta, normalizedBeta, GYRO_SMOOTHING);
+    smoothedGamma = THREE.MathUtils.lerp(smoothedGamma, normalizedGamma, GYRO_SMOOTHING);
+
+    gyro.beta = smoothedBeta;
+    gyro.gamma = smoothedGamma;
+  } catch (e) {
+    // Silently ignore errors
+  }
 }
 
 // Accelerometer for shake/motion physics
@@ -277,30 +299,39 @@ function requestMotionPermission() {
 function handleMotion(event) {
   if (!motionEnabled) return;
 
-  const accel = event.accelerationIncludingGravity;
-  if (!accel) return;
+  try {
+    const accel = event.accelerationIncludingGravity;
+    if (!accel) return;
 
-  // Get acceleration
-  motion.x = (accel.x || 0);
-  motion.y = (accel.y || 0);
-  motion.z = (accel.z || 0);
+    // Get acceleration, skip invalid readings
+    const x = accel.x || 0;
+    const y = accel.y || 0;
+    const z = accel.z || 0;
+    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
 
-  // Detect shake gesture for grid mode
-  if (isGridMode) {
-    const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
-    const now = Date.now();
+    motion.x = x;
+    motion.y = y;
+    motion.z = z;
 
-    // Add to buffer
-    shakeDetectionBuffer.push({ magnitude, time: now });
+    // Detect shake gesture for grid mode
+    if (isGridMode && !gridShakeActive) {
+      const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
+      const now = Date.now();
 
-    // Remove old entries
-    shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
+      // Add to buffer
+      shakeDetectionBuffer.push({ magnitude, time: now });
 
-    // Check for shake pattern (multiple high accelerations)
-    const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
-    if (highAccelCount >= 3 && !gridShakeActive) {
-      activateGridShake();
+      // Remove old entries
+      shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
+
+      // Check for shake pattern (multiple high accelerations)
+      const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
+      if (highAccelCount >= 3) {
+        activateGridShake();
+      }
     }
+  } catch (e) {
+    // Silently ignore errors
   }
 }
 
@@ -327,19 +358,24 @@ function spawnInfiniteGrid() {
   // Remove any existing infinite grid clones
   removeInfiniteGrid();
 
+  // Check if we have any valid source models
+  const validSources = gridModels.filter(entry =>
+    entry && entry.object && entry.object.userData.innerObject
+  );
+
+  if (validSources.length === 0) {
+    console.warn('No valid source models for infinite grid');
+    deactivateGridShake();
+    return;
+  }
+
   const totalCells = INFINITE_GRID_COLS * INFINITE_GRID_ROWS;
-  const gridWidth = INFINITE_GRID_COLS * INFINITE_GRID_CELL_W;
-  const gridHeight = INFINITE_GRID_ROWS * INFINITE_GRID_CELL_H;
 
   // Create clones to fill the infinite grid
   for (let i = 0; i < totalCells; i++) {
-    // Pick a random source model
-    const sourceIndex = i % gridModels.length;
-    const sourceEntry = gridModels[sourceIndex];
-    if (!sourceEntry || !sourceEntry.object) continue;
-
+    // Pick a source model (cycle through valid sources)
+    const sourceEntry = validSources[i % validSources.length];
     const innerObj = sourceEntry.object.userData.innerObject;
-    if (!innerObj) continue;
 
     // Clone the inner object
     const clonedInner = innerObj.clone(true);
@@ -526,6 +562,14 @@ let touchDragRotationY = 0;
 let touchDragTargetX = 0;
 let touchDragTargetY = 0;
 
+// Pinch to zoom
+let isPinching = false;
+let initialPinchDistance = 0;
+let currentZoom = 1; // 1 = default, < 1 = zoomed in, > 1 = zoomed out
+const MIN_ZOOM = 0.5; // Maximum zoom in (smaller frustum)
+const MAX_ZOOM = 2.0; // Maximum zoom out (larger frustum)
+const baseFrustumSize = 12; // Original frustum size
+
 function updateMousePosition(event) {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -546,8 +590,29 @@ const TAP_THRESHOLD = 200; // ms - taps shorter than this trigger interaction
 const DOUBLE_TAP_THRESHOLD = 300; // ms - taps within this time are double tap
 const DRAG_THRESHOLD = 10; // pixels - movement beyond this is a drag
 
+function getPinchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function updateCameraZoom() {
+  const zoomedFrustum = baseFrustumSize * currentZoom;
+  const aspect = window.innerWidth / window.innerHeight;
+  camera.left = zoomedFrustum * aspect / -2;
+  camera.right = zoomedFrustum * aspect / 2;
+  camera.top = zoomedFrustum / 2;
+  camera.bottom = zoomedFrustum / -2;
+  camera.updateProjectionMatrix();
+}
+
 function onTouchStart(event) {
-  if (event.touches.length === 1) {
+  if (event.touches.length === 2) {
+    // Pinch gesture start
+    isPinching = true;
+    initialPinchDistance = getPinchDistance(event.touches);
+    touchDragging = false;
+  } else if (event.touches.length === 1) {
     const touch = event.touches[0];
     mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
@@ -556,11 +621,31 @@ function onTouchStart(event) {
     touchStartY = touch.clientY;
     touchStartTime = Date.now();
     touchDragging = false;
+    isPinching = false;
   }
 }
 
 function onTouchMove(event) {
   if (introActive) return;
+
+  // Handle pinch gesture
+  if (event.touches.length === 2 && isPinching) {
+    event.preventDefault();
+    const currentDistance = getPinchDistance(event.touches);
+    const scale = initialPinchDistance / currentDistance;
+
+    // Update zoom (pinch in = smaller distance = zoom in = smaller frustum)
+    const newZoom = THREE.MathUtils.clamp(currentZoom * scale, MIN_ZOOM, MAX_ZOOM);
+
+    // Only update if changed significantly
+    if (Math.abs(newZoom - currentZoom) > 0.01) {
+      currentZoom = newZoom;
+      initialPinchDistance = currentDistance; // Reset for continuous pinch
+      updateCameraZoom();
+    }
+    return;
+  }
+
   if (event.touches.length !== 1) return;
 
   const touch = event.touches[0];
@@ -584,6 +669,15 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
+  // Reset pinch state
+  if (isPinching) {
+    isPinching = false;
+    // Don't trigger tap/interaction after pinch
+    if (event.touches.length === 0) {
+      return;
+    }
+  }
+
   if (introActive) {
     exitIntro();
     // Request gyro and motion permissions on first touch (required by iOS)
@@ -597,7 +691,7 @@ function onTouchEnd(event) {
   }
 
   const touchDuration = Date.now() - touchStartTime;
-  const wasTap = !touchDragging && touchDuration < TAP_THRESHOLD;
+  const wasTap = !touchDragging && !isPinching && touchDuration < TAP_THRESHOLD;
 
   // Reset drag state
   touchDragging = false;
@@ -1128,8 +1222,17 @@ let totalAssetsToLoad = 0;
 let hasCompletedInitialLoad = false;
 const loadingScreen = document.getElementById('loading-screen');
 
+const loadingBar = document.getElementById('loading-bar');
+
 function checkLoadingComplete() {
   modelsLoaded++;
+
+  // Update loading bar progress
+  if (loadingBar && totalAssetsToLoad > 0) {
+    const progress = Math.min((modelsLoaded / totalAssetsToLoad) * 100, 100);
+    loadingBar.style.width = `${progress}%`;
+  }
+
   if (!hasCompletedInitialLoad && totalAssetsToLoad > 0 && modelsLoaded >= totalAssetsToLoad) {
     hasCompletedInitialLoad = true;
     prewarmGridModels();
@@ -1661,10 +1764,11 @@ animate();
 // Handle resize
 window.addEventListener('resize', () => {
   const aspect = window.innerWidth / window.innerHeight;
-  camera.left = frustumSize * aspect / -2;
-  camera.right = frustumSize * aspect / 2;
-  camera.top = frustumSize / 2;
-  camera.bottom = frustumSize / -2;
+  const zoomedFrustum = baseFrustumSize * currentZoom;
+  camera.left = zoomedFrustum * aspect / -2;
+  camera.right = zoomedFrustum * aspect / 2;
+  camera.top = zoomedFrustum / 2;
+  camera.bottom = zoomedFrustum / -2;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 
