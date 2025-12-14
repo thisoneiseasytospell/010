@@ -628,8 +628,8 @@ function onTouchStart(event) {
 function onTouchMove(event) {
   if (introActive) return;
 
-  // Handle pinch gesture
-  if (event.touches.length === 2 && isPinching) {
+  // Handle pinch gesture (only in solo mode)
+  if (event.touches.length === 2 && isPinching && !isGridMode) {
     event.preventDefault();
     const currentDistance = getPinchDistance(event.touches);
     const scale = initialPinchDistance / currentDistance;
@@ -834,6 +834,12 @@ function toggleMode() {
 
   if (isGridMode) {
     // GRID MODE
+    // Reset zoom to default when entering grid mode
+    if (currentZoom !== 1) {
+      currentZoom = 1;
+      updateCameraZoom();
+    }
+
     // Hide solo mode elements
     mainModels.forEach(model => {
       if (model.object) model.object.visible = false;
@@ -1240,9 +1246,7 @@ function checkLoadingComplete() {
       loadingScreen.classList.add('hidden');
       // Show intro prompt only after loading is complete
       if (introPrompt && introActive) {
-        if (isTouchDevice) {
-          introPrompt.textContent = 'TAP TO ENTER';
-        }
+        introPrompt.textContent = isTouchDevice ? 'TAP TO ENTER' : 'CLICK TO ENTER';
         introPrompt.classList.add('visible');
       }
     }, 500);
