@@ -239,22 +239,21 @@ const MOTION_DAMPING = 0.92; // velocity decay
 const MOTION_SENSITIVITY = 0.008; // how much acceleration affects velocity
 const BOUNCE_FACTOR = 0.6; // energy retained on bounce
 
-// Grid shake physics
+// Grid shake physics - infinite sliding grid
 let gridShakeActive = false;
 let shakeDetectionBuffer = [];
 const SHAKE_THRESHOLD = 20; // acceleration magnitude to trigger shake
 const SHAKE_WINDOW = 500; // ms to detect shake pattern
-const GRID_BOX_BOUNDS_X = 3.5; // box width
-const GRID_BOX_BOUNDS_Y = 5.5; // box height
-const MODEL_COLLISION_RADIUS = 0.8; // collision sphere radius per model
-const COLLISION_DAMPING = 0.7; // energy lost on collision
-const TURBULENCE_STRENGTH = 0.015; // random jitter
-const gridModelPhysics = []; // per-model velocity and offset
 
-// Clone models for shake mode (extra fun!)
-const SHAKE_CLONE_COUNT = 15; // Number of clone models to add when shaking
-const shakeCloneModels = []; // Clone 3D objects
-const shakeClonePhysics = []; // Physics for clones
+// Infinite grid configuration
+const INFINITE_GRID_COLS = 5; // columns in the infinite grid
+const INFINITE_GRID_ROWS = 7; // rows in the infinite grid
+const INFINITE_GRID_CELL_W = 2.4; // cell width
+const INFINITE_GRID_CELL_H = 2.4; // cell height
+const INFINITE_GRID_SLIDE_SPEED = 0.15; // how fast grid responds to tilt
+const infiniteGridModels = []; // Array of clone groups for infinite grid
+let infiniteGridOffset = { x: 0, y: 0 }; // current scroll offset
+let infiniteGridVelocity = { x: 0, y: 0 }; // velocity for smooth movement
 
 function requestMotionPermission() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -309,54 +308,33 @@ function activateGridShake() {
   gridShakeActive = true;
   shakeDetectionBuffer = [];
 
-  // Initialize physics for each grid model
-  gridModels.forEach((entry, index) => {
-    if (!gridModelPhysics[index]) {
-      gridModelPhysics[index] = {
-        velocityX: 0,
-        velocityY: 0,
-        posX: 0,
-        posY: 0,
-        baseX: 0,
-        baseY: 0
-      };
-    }
-    // Store current grid position as base, start at current position
+  // Hide original grid models
+  gridModels.forEach((entry) => {
     if (entry && entry.object) {
-      const gridPos = getGridPosition(index);
-      gridModelPhysics[index].baseX = gridPos.x;
-      gridModelPhysics[index].baseY = gridPos.y;
-      gridModelPhysics[index].posX = entry.object.position.x;
-      gridModelPhysics[index].posY = entry.object.position.y;
-      gridModelPhysics[index].velocityX = (Math.random() - 0.5) * 0.3; // Random initial velocity
-      gridModelPhysics[index].velocityY = (Math.random() - 0.5) * 0.3;
+      entry.object.visible = false;
     }
   });
 
-  // Spawn clone models for extra chaos!
-  spawnShakeClones();
+  // Reset offset and velocity
+  infiniteGridOffset = { x: 0, y: 0 };
+  infiniteGridVelocity = { x: 0, y: 0 };
+
+  // Spawn infinite grid of clones
+  spawnInfiniteGrid();
 }
 
-function spawnShakeClones() {
-  // Remove any existing clones first
-  shakeCloneModels.forEach((clone) => {
-    if (clone) {
-      scene.remove(clone);
-      clone.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat) => mat.dispose());
-        }
-      });
-    }
-  });
-  shakeCloneModels.length = 0;
-  shakeClonePhysics.length = 0;
+function spawnInfiniteGrid() {
+  // Remove any existing infinite grid clones
+  removeInfiniteGrid();
 
-  // Create clones from random existing grid models
-  for (let i = 0; i < SHAKE_CLONE_COUNT; i++) {
-    const sourceIndex = Math.floor(Math.random() * gridModels.length);
+  const totalCells = INFINITE_GRID_COLS * INFINITE_GRID_ROWS;
+  const gridWidth = INFINITE_GRID_COLS * INFINITE_GRID_CELL_W;
+  const gridHeight = INFINITE_GRID_ROWS * INFINITE_GRID_CELL_H;
+
+  // Create clones to fill the infinite grid
+  for (let i = 0; i < totalCells; i++) {
+    // Pick a random source model
+    const sourceIndex = i % gridModels.length;
     const sourceEntry = gridModels[sourceIndex];
     if (!sourceEntry || !sourceEntry.object) continue;
 
@@ -366,7 +344,7 @@ function spawnShakeClones() {
     // Clone the inner object
     const clonedInner = innerObj.clone(true);
 
-    // Apply materials to clone
+    // Clone materials
     clonedInner.traverse((child) => {
       if (child.isMesh && child.material) {
         const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -378,28 +356,25 @@ function spawnShakeClones() {
     const cloneGroup = new THREE.Group();
     cloneGroup.add(clonedInner);
 
-    // Random starting position within the box
-    const startX = (Math.random() - 0.5) * GRID_BOX_BOUNDS_X * 1.5;
-    const startY = (Math.random() - 0.5) * GRID_BOX_BOUNDS_Y * 1.5;
-    cloneGroup.position.set(startX, startY, 0);
-    cloneGroup.userData.isShakeClone = true;
-    cloneGroup.userData.innerObject = clonedInner;
+    // Calculate grid position
+    const col = i % INFINITE_GRID_COLS;
+    const row = Math.floor(i / INFINITE_GRID_COLS);
+    const baseX = (col - (INFINITE_GRID_COLS - 1) / 2) * INFINITE_GRID_CELL_W;
+    const baseY = (row - (INFINITE_GRID_ROWS - 1) / 2) * INFINITE_GRID_CELL_H;
 
-    // Random initial rotation
-    clonedInner.rotation.x = (Math.random() - 0.5) * Math.PI;
-    clonedInner.rotation.y = (Math.random() - 0.5) * Math.PI * 2;
-    clonedInner.rotation.z = (Math.random() - 0.5) * Math.PI * 0.5;
+    cloneGroup.position.set(baseX, baseY, 0);
+    cloneGroup.userData.isInfiniteGridClone = true;
+    cloneGroup.userData.innerObject = clonedInner;
+    cloneGroup.userData.gridCol = col;
+    cloneGroup.userData.gridRow = row;
+    cloneGroup.userData.baseX = baseX;
+    cloneGroup.userData.baseY = baseY;
+
+    // Random rotation for variety
+    clonedInner.rotation.y = (Math.random() - 0.5) * Math.PI * 0.5 + Math.PI * 0.1;
 
     scene.add(cloneGroup);
-    shakeCloneModels.push(cloneGroup);
-
-    // Initialize physics for clone
-    shakeClonePhysics.push({
-      velocityX: (Math.random() - 0.5) * 0.6, // Higher initial velocity for clones
-      velocityY: (Math.random() - 0.5) * 0.6,
-      posX: startX,
-      posY: startY
-    });
+    infiniteGridModels.push(cloneGroup);
   }
 }
 
@@ -408,186 +383,91 @@ function updateGridShakePhysics() {
 
   const isPortrait = window.innerWidth / window.innerHeight < 1;
   if (!isPortrait) {
-    gridShakeActive = false;
-    removeShakeClones();
+    deactivateGridShake();
     return;
   }
 
-  let anyMoving = false;
+  // Get tilt input from gyroscope
+  const tiltX = gyroEnabled ? gyro.gamma : 0; // left/right tilt (-1 to 1)
+  const tiltY = gyroEnabled ? gyro.beta : 0;  // forward/back tilt (-1 to 1)
 
-  // Build combined list of all physics objects (originals + clones)
-  const allPhysics = [];
-  const allObjects = [];
+  // Apply tilt to velocity with smooth acceleration
+  infiniteGridVelocity.x += tiltX * INFINITE_GRID_SLIDE_SPEED;
+  infiniteGridVelocity.y -= tiltY * INFINITE_GRID_SLIDE_SPEED;
 
-  gridModels.forEach((entry, index) => {
-    if (entry && entry.object && gridModelPhysics[index]) {
-      allPhysics.push(gridModelPhysics[index]);
-      allObjects.push(entry.object);
+  // Apply damping for smooth deceleration
+  infiniteGridVelocity.x *= 0.95;
+  infiniteGridVelocity.y *= 0.95;
+
+  // Update offset
+  infiniteGridOffset.x += infiniteGridVelocity.x;
+  infiniteGridOffset.y += infiniteGridVelocity.y;
+
+  // Calculate grid dimensions for wrapping
+  const gridWidth = INFINITE_GRID_COLS * INFINITE_GRID_CELL_W;
+  const gridHeight = INFINITE_GRID_ROWS * INFINITE_GRID_CELL_H;
+
+  // Update all clone positions with wrapping for infinite scroll effect
+  infiniteGridModels.forEach((clone) => {
+    if (!clone) return;
+
+    // Calculate position with offset
+    let newX = clone.userData.baseX + infiniteGridOffset.x;
+    let newY = clone.userData.baseY + infiniteGridOffset.y;
+
+    // Wrap horizontally (infinite scroll)
+    const halfWidth = gridWidth / 2;
+    while (newX > halfWidth + INFINITE_GRID_CELL_W / 2) {
+      newX -= gridWidth;
+      clone.userData.baseX -= gridWidth;
+    }
+    while (newX < -halfWidth - INFINITE_GRID_CELL_W / 2) {
+      newX += gridWidth;
+      clone.userData.baseX += gridWidth;
+    }
+
+    // Wrap vertically (infinite scroll)
+    const halfHeight = gridHeight / 2;
+    while (newY > halfHeight + INFINITE_GRID_CELL_H / 2) {
+      newY -= gridHeight;
+      clone.userData.baseY -= gridHeight;
+    }
+    while (newY < -halfHeight - INFINITE_GRID_CELL_H / 2) {
+      newY += gridHeight;
+      clone.userData.baseY += gridHeight;
+    }
+
+    clone.position.x = newX;
+    clone.position.y = newY;
+
+    // Subtle rotation based on movement
+    const innerObj = clone.userData.innerObject;
+    if (innerObj) {
+      innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, -infiniteGridVelocity.y * 0.3, 0.1);
+      innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, infiniteGridVelocity.x * 0.2, 0.1);
     }
   });
-
-  shakeCloneModels.forEach((clone, index) => {
-    if (clone && shakeClonePhysics[index]) {
-      allPhysics.push(shakeClonePhysics[index]);
-      allObjects.push(clone);
-    }
-  });
-
-  // First pass: update velocities and positions for ALL objects
-  allPhysics.forEach((physics) => {
-    // Apply device motion to velocity
-    physics.velocityX += motion.x * MOTION_SENSITIVITY * 2;
-    physics.velocityY -= motion.y * MOTION_SENSITIVITY * 2;
-
-    // Add turbulence (random jitter)
-    physics.velocityX += (Math.random() - 0.5) * TURBULENCE_STRENGTH;
-    physics.velocityY += (Math.random() - 0.5) * TURBULENCE_STRENGTH;
-
-    // Apply damping
-    physics.velocityX *= MOTION_DAMPING;
-    physics.velocityY *= MOTION_DAMPING;
-
-    // Update position
-    physics.posX += physics.velocityX;
-    physics.posY += physics.velocityY;
-  });
-
-  // Second pass: collision detection between ALL models (including clones)
-  for (let i = 0; i < allPhysics.length; i++) {
-    const physicsA = allPhysics[i];
-
-    for (let j = i + 1; j < allPhysics.length; j++) {
-      const physicsB = allPhysics[j];
-
-      // Calculate distance between models
-      const dx = physicsB.posX - physicsA.posX;
-      const dy = physicsB.posY - physicsA.posY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = MODEL_COLLISION_RADIUS * 2;
-
-      // Check collision
-      if (dist < minDist && dist > 0) {
-        // Normalize collision vector
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        // Relative velocity
-        const dvx = physicsA.velocityX - physicsB.velocityX;
-        const dvy = physicsA.velocityY - physicsB.velocityY;
-
-        // Relative velocity along collision normal
-        const dvn = dvx * nx + dvy * ny;
-
-        // Only resolve if objects are approaching
-        if (dvn > 0) {
-          // Impulse (assuming equal mass)
-          const impulse = dvn * COLLISION_DAMPING;
-
-          // Apply impulse
-          physicsA.velocityX -= impulse * nx;
-          physicsA.velocityY -= impulse * ny;
-          physicsB.velocityX += impulse * nx;
-          physicsB.velocityY += impulse * ny;
-        }
-
-        // Separate overlapping models
-        const overlap = minDist - dist;
-        const separationX = (overlap / 2) * nx;
-        const separationY = (overlap / 2) * ny;
-        physicsA.posX -= separationX;
-        physicsA.posY -= separationY;
-        physicsB.posX += separationX;
-        physicsB.posY += separationY;
-      }
-    }
-  }
-
-  // Third pass: wall collisions and apply final positions
-  allPhysics.forEach((physics, index) => {
-    // Bounce off box walls
-    if (physics.posX > GRID_BOX_BOUNDS_X) {
-      physics.posX = GRID_BOX_BOUNDS_X;
-      physics.velocityX = -Math.abs(physics.velocityX) * BOUNCE_FACTOR;
-    } else if (physics.posX < -GRID_BOX_BOUNDS_X) {
-      physics.posX = -GRID_BOX_BOUNDS_X;
-      physics.velocityX = Math.abs(physics.velocityX) * BOUNCE_FACTOR;
-    }
-
-    if (physics.posY > GRID_BOX_BOUNDS_Y) {
-      physics.posY = GRID_BOX_BOUNDS_Y;
-      physics.velocityY = -Math.abs(physics.velocityY) * BOUNCE_FACTOR;
-    } else if (physics.posY < -GRID_BOX_BOUNDS_Y) {
-      physics.posY = -GRID_BOX_BOUNDS_Y;
-      physics.velocityY = Math.abs(physics.velocityY) * BOUNCE_FACTOR;
-    }
-
-    // Apply to 3D object
-    const obj = allObjects[index];
-    if (obj) {
-      obj.position.x = physics.posX;
-      obj.position.y = physics.posY;
-    }
-
-    // Check if still moving
-    if (Math.abs(physics.velocityX) > 0.005 || Math.abs(physics.velocityY) > 0.005) {
-      anyMoving = true;
-    }
-  });
-
-  // Deactivate and return to grid when motion stops
-  if (!anyMoving && Math.abs(motion.x) < 2 && Math.abs(motion.y) < 2) {
-    let allBack = true;
-    gridModels.forEach((entry, index) => {
-      if (!entry || !entry.object) return;
-      const physics = gridModelPhysics[index];
-      if (!physics) return;
-
-      // Lerp back to base position
-      physics.posX = THREE.MathUtils.lerp(physics.posX, physics.baseX, 0.08);
-      physics.posY = THREE.MathUtils.lerp(physics.posY, physics.baseY, 0.08);
-      entry.object.position.x = physics.posX;
-      entry.object.position.y = physics.posY;
-
-      const distToBase = Math.abs(physics.posX - physics.baseX) + Math.abs(physics.posY - physics.baseY);
-      if (distToBase > 0.1) {
-        allBack = false;
-      }
-    });
-
-    // Fade out clones while returning to base
-    shakeCloneModels.forEach((clone) => {
-      if (clone) {
-        clone.traverse((child) => {
-          if (child.material) {
-            const materials = Array.isArray(child.material) ? child.material : [child.material];
-            materials.forEach((mat) => {
-              mat.transparent = true;
-              mat.opacity = THREE.MathUtils.lerp(mat.opacity, 0, 0.1);
-            });
-          }
-        });
-      }
-    });
-
-    if (allBack) {
-      gridShakeActive = false;
-      gridModels.forEach((entry, index) => {
-        if (!entry || !entry.object) return;
-        const physics = gridModelPhysics[index];
-        if (!physics) return;
-        entry.object.position.x = physics.baseX;
-        entry.object.position.y = physics.baseY;
-        physics.posX = physics.baseX;
-        physics.posY = physics.baseY;
-      });
-      // Remove clones when shake ends
-      removeShakeClones();
-    }
-  }
 }
 
-function removeShakeClones() {
-  shakeCloneModels.forEach((clone) => {
+function deactivateGridShake() {
+  gridShakeActive = false;
+
+  // Remove infinite grid clones
+  removeInfiniteGrid();
+
+  // Show original grid models again
+  gridModels.forEach((entry) => {
+    if (entry && entry.object) {
+      entry.object.visible = true;
+    }
+  });
+
+  // Reset grid positions
+  updateGridLayout();
+}
+
+function removeInfiniteGrid() {
+  infiniteGridModels.forEach((clone) => {
     if (clone) {
       scene.remove(clone);
       clone.traverse((child) => {
@@ -599,8 +479,9 @@ function removeShakeClones() {
       });
     }
   });
-  shakeCloneModels.length = 0;
-  shakeClonePhysics.length = 0;
+  infiniteGridModels.length = 0;
+  infiniteGridOffset = { x: 0, y: 0 };
+  infiniteGridVelocity = { x: 0, y: 0 };
 }
 
 function updateMotionPhysics() {
@@ -698,7 +579,7 @@ function onTouchMove(event) {
 
     // Map drag to rotation (full screen drag = full rotation)
     touchDragTargetY = (deltaX / window.innerWidth) * Math.PI * 1.5;
-    touchDragTargetX = -(deltaY / window.innerHeight) * Math.PI * 0.8;
+    touchDragTargetX = (deltaY / window.innerHeight) * Math.PI * 0.8; // Mirrored: swipe up = look up
   }
 }
 
@@ -750,6 +631,12 @@ function handleInteraction() {
   if (models.length === 0) return;
 
   if (isGridMode) {
+    // If in infinite grid shake mode, tap exits back to normal grid
+    if (gridShakeActive) {
+      deactivateGridShake();
+      return;
+    }
+
     raycaster.setFromCamera(mouse, camera);
 
     const gridObjects = gridModels
@@ -869,7 +756,7 @@ function toggleMode() {
     // SOLO MODE
     // Clean up grid shake state and clones
     gridShakeActive = false;
-    removeShakeClones();
+    removeInfiniteGrid();
 
     // Hide grid mode elements
     gridModels.forEach(model => {
@@ -1248,6 +1135,13 @@ function checkLoadingComplete() {
     prewarmGridModels();
     setTimeout(() => {
       loadingScreen.classList.add('hidden');
+      // Show intro prompt only after loading is complete
+      if (introPrompt && introActive) {
+        if (isTouchDevice) {
+          introPrompt.textContent = 'TAP TO ENTER';
+        }
+        introPrompt.classList.add('visible');
+      }
     }, 500);
   }
 }
@@ -1640,12 +1534,6 @@ async function init() {
 
 init();
 
-// Show intro prompt immediately on touch devices
-if (isTouchDevice && introPrompt) {
-  introPrompt.textContent = 'TAP TO ENTER';
-  introPrompt.classList.add('visible');
-}
-
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
@@ -1728,10 +1616,10 @@ function animate() {
       } else if (hasGyroInput) {
         // Gyro control - amplified for full inspection
         targetRotationY = gyro.gamma * Math.PI * 0.5;
-        targetRotationX = -gyro.beta * Math.PI * 0.4;
+        targetRotationX = gyro.beta * Math.PI * 0.4; // Mirrored: tilt forward = look up
       } else if (mouseIsMoving) {
         targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
+        targetRotationX = mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR; // Mirrored
       } else {
         targetRotationX = 0;
         targetRotationY = 0;
