@@ -241,6 +241,7 @@ html, body {
   #solo-info-title {
     text-align: center;
     font-size: clamp(0.9rem, 4vw, 1.2rem);
+    min-height: 1.4em; /* Prevent jumping when text changes */
   }
 
   #solo-info-body p {
@@ -323,4 +324,86 @@ html, body {
   background: #08090d;
   transition: width 0.3s ease;
   opacity: 0.6;
+}
+
+/* Lighting debug controls */
+#lighting-controls {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: rgba(8, 9, 13, 0.9);
+  padding: 1rem;
+  border-radius: 8px;
+  z-index: 200;
+  font-size: 11px;
+  color: #f5f7ff;
+  max-width: 200px;
+  pointer-events: auto;
+}
+
+#lighting-controls.hidden {
+  display: none;
+}
+
+#lighting-controls .control-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+#lighting-controls label {
+  min-width: 50px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+#lighting-controls input[type="range"] {
+  flex: 1;
+  min-width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+}
+
+#lighting-controls input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+#lighting-controls input[type="color"] {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+#lighting-controls span {
+  min-width: 24px;
+  text-align: right;
+  font-family: monospace;
+}
+
+#lighting-controls button {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+#lighting-controls button:hover {
+  background: rgba(255,255,255,0.2);
 }

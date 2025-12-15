@@ -154,24 +154,143 @@ container.appendChild(renderer.domElement);
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/');
 
-// Lighting
-const ambient = new THREE.AmbientLight(0xffffff, 1.4);
+// Lighting - Sunset vibes
+const ambient = new THREE.AmbientLight(0xffeedd, 0.8);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xcccccc, 0.8);
+const hemiLight = new THREE.HemisphereLight(0xffd4a6, 0x8b7355, 0.6);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+const keyLight = new THREE.DirectionalLight(0xffaa66, 2.5);
 keyLight.position.set(8, 10, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xffffff, 1.3);
+const fillLight = new THREE.DirectionalLight(0xff8866, 1.0);
 fillLight.position.set(-6, 5, 5);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.9);
+const rimLight = new THREE.DirectionalLight(0xffccaa, 1.2);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
+
+// Lighting debug controls
+const lightingControls = document.getElementById('lighting-controls');
+let lightingControlsVisible = false;
+
+function setupLightingControls() {
+  const ctrlAmbient = document.getElementById('ctrl-ambient');
+  const ctrlKey = document.getElementById('ctrl-key');
+  const ctrlKeyColor = document.getElementById('ctrl-key-color');
+  const ctrlFill = document.getElementById('ctrl-fill');
+  const ctrlFillColor = document.getElementById('ctrl-fill-color');
+  const ctrlRim = document.getElementById('ctrl-rim');
+  const ctrlRimColor = document.getElementById('ctrl-rim-color');
+  const ctrlHemiSky = document.getElementById('ctrl-hemi-sky');
+  const ctrlHemiGround = document.getElementById('ctrl-hemi-ground');
+  const ctrlCopy = document.getElementById('ctrl-copy');
+
+  // Set initial values from current lighting
+  if (ctrlAmbient) {
+    ctrlAmbient.value = ambient.intensity;
+    document.getElementById('val-ambient').textContent = ambient.intensity.toFixed(1);
+    ctrlAmbient.addEventListener('input', (e) => {
+      ambient.intensity = parseFloat(e.target.value);
+      document.getElementById('val-ambient').textContent = ambient.intensity.toFixed(1);
+    });
+  }
+
+  if (ctrlKey) {
+    ctrlKey.value = keyLight.intensity;
+    document.getElementById('val-key').textContent = keyLight.intensity.toFixed(1);
+    ctrlKey.addEventListener('input', (e) => {
+      keyLight.intensity = parseFloat(e.target.value);
+      document.getElementById('val-key').textContent = keyLight.intensity.toFixed(1);
+    });
+  }
+  if (ctrlKeyColor) {
+    ctrlKeyColor.value = '#' + keyLight.color.getHexString();
+    ctrlKeyColor.addEventListener('input', (e) => {
+      keyLight.color.set(e.target.value);
+    });
+  }
+
+  if (ctrlFill) {
+    ctrlFill.value = fillLight.intensity;
+    document.getElementById('val-fill').textContent = fillLight.intensity.toFixed(1);
+    ctrlFill.addEventListener('input', (e) => {
+      fillLight.intensity = parseFloat(e.target.value);
+      document.getElementById('val-fill').textContent = fillLight.intensity.toFixed(1);
+    });
+  }
+  if (ctrlFillColor) {
+    ctrlFillColor.value = '#' + fillLight.color.getHexString();
+    ctrlFillColor.addEventListener('input', (e) => {
+      fillLight.color.set(e.target.value);
+    });
+  }
+
+  if (ctrlRim) {
+    ctrlRim.value = rimLight.intensity;
+    document.getElementById('val-rim').textContent = rimLight.intensity.toFixed(1);
+    ctrlRim.addEventListener('input', (e) => {
+      rimLight.intensity = parseFloat(e.target.value);
+      document.getElementById('val-rim').textContent = rimLight.intensity.toFixed(1);
+    });
+  }
+  if (ctrlRimColor) {
+    ctrlRimColor.value = '#' + rimLight.color.getHexString();
+    ctrlRimColor.addEventListener('input', (e) => {
+      rimLight.color.set(e.target.value);
+    });
+  }
+
+  if (ctrlHemiSky) {
+    ctrlHemiSky.value = '#' + hemiLight.color.getHexString();
+    ctrlHemiSky.addEventListener('input', (e) => {
+      hemiLight.color.set(e.target.value);
+    });
+  }
+  if (ctrlHemiGround) {
+    ctrlHemiGround.value = '#' + hemiLight.groundColor.getHexString();
+    ctrlHemiGround.addEventListener('input', (e) => {
+      hemiLight.groundColor.set(e.target.value);
+    });
+  }
+
+  if (ctrlCopy) {
+    ctrlCopy.addEventListener('click', () => {
+      const values = `
+ambient: 0x${ambient.color.getHexString()}, ${ambient.intensity.toFixed(1)}
+hemi: sky 0x${hemiLight.color.getHexString()}, ground 0x${hemiLight.groundColor.getHexString()}, ${hemiLight.intensity.toFixed(1)}
+key: 0x${keyLight.color.getHexString()}, ${keyLight.intensity.toFixed(1)}
+fill: 0x${fillLight.color.getHexString()}, ${fillLight.intensity.toFixed(1)}
+rim: 0x${rimLight.color.getHexString()}, ${rimLight.intensity.toFixed(1)}
+      `.trim();
+      navigator.clipboard.writeText(values).then(() => {
+        ctrlCopy.textContent = 'Copied!';
+        setTimeout(() => { ctrlCopy.textContent = 'Copy Values'; }, 1500);
+      });
+    });
+  }
+}
+
+function toggleLightingControls() {
+  lightingControlsVisible = !lightingControlsVisible;
+  if (lightingControls) {
+    lightingControls.classList.toggle('hidden', !lightingControlsVisible);
+  }
+}
+
+// Press 'L' to toggle lighting controls
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'l' || e.key === 'L') {
+    if (!e.ctrlKey && !e.metaKey) {
+      toggleLightingControls();
+    }
+  }
+});
+
+setupLightingControls();
 
 // Mouse tracking
 const mouse = new THREE.Vector2();
