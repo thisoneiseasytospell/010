@@ -154,22 +154,22 @@ container.appendChild(renderer.domElement);
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/');
 
-// Lighting - Sunset vibes
-const ambient = new THREE.AmbientLight(0xffeedd, 0.8);
+// Lighting - Studio setup
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffd4a6, 0x8b7355, 0.6);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xd4d4d4, 0.4);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xffaa66, 2.5);
+const keyLight = new THREE.DirectionalLight(0xfff8f0, 2.0);
 keyLight.position.set(8, 10, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xff8866, 1.0);
+const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.8);
 fillLight.position.set(-6, 5, 5);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffccaa, 1.2);
+const rimLight = new THREE.DirectionalLight(0xffffff, 1.0);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
 
@@ -1778,6 +1778,14 @@ function animate() {
       const baseRotationY = group.userData.baseRotationY || 0;
       const baseRotationX = group.userData.baseRotationX || 0;
 
+      // Debug mode: return to default rotation
+      if (lightingControlsVisible) {
+        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, baseRotationY, 0.1);
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.1);
+        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.1);
+        return;
+      }
+
       if (group.userData.gridIntroAnimating) {
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, baseRotationY, 0.08);
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.08);
@@ -1830,6 +1838,12 @@ function animate() {
       mainModel.object.position.x = isPortrait ? 0 : (mainModel.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
       mainModel.object.position.y = isPortrait ? 0.5 : (mainModel.object.userData.soloYPos || 0);
 
+      // Debug mode: return to default rotation
+      if (lightingControlsVisible && innerObj) {
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, 0, 0.1);
+        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, 0, 0.1);
+        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.1);
+      } else {
       // Get input from touch drag, gyroscope, or mouse
       let targetRotationX, targetRotationY;
       const hasGyroInput = gyroEnabled && (Math.abs(gyro.gamma) > 0.01 || Math.abs(gyro.beta) > 0.01);
@@ -1875,6 +1889,7 @@ function animate() {
         innerObj.rotation.x *= 0.94;
         innerObj.rotation.y *= 0.94;
       }
+      } // end of else (not debug mode)
     }
   }
 

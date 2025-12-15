@@ -1,7 +1,7 @@
 [
   {
     "id": "compressed-laugh2",
-    "heading": "Laugh II Totem",
+    "heading": "Whippets",
     "lines": [
       "A sibling to the original Laugh relic, this version doubles down on looping smiles.",
       "Follow the staggered plates that vibrate like stacked bells when you orbit around.",
@@ -11,7 +11,7 @@
   },
   {
     "id": "compressed-loud-card",
-    "heading": "Loud Card Relic",
+    "heading": "Witte de With",
     "lines": [
       "Collectible-card proportions get frozen into a beveled monolith here.",
       "Count the foil ridges and neon insets that suggest a prized pull from a booster pack.",
@@ -21,7 +21,7 @@
   },
   {
     "id": "compressed-1763391167896-bob",
-    "heading": "Bob The Mascot",
+    "heading": "Huisbaas Bob",
     "lines": [
       "Bob’s grin holds the whole presentation together even in solo mode.",
       "Gangly limbs stretch like inflatables tethered to impossible joints.",
@@ -31,7 +31,7 @@
   },
   {
     "id": "compressed-1763391168219-feyenoord",
-    "heading": "Feyenoord Pulse",
+    "heading": "Feyenoord Fans",
     "lines": [
       "Stadium roars get squashed into chiseled channels down the torso.",
       "Alternating red-and-white panes nod toward jerseys and banners.",
@@ -41,7 +41,7 @@
   },
   {
     "id": "compressed-1763391168221-erasmus",
-    "heading": "Erasmus Beacon",
+    "heading": "Mt. Erasmus",
     "lines": [
       "A calm guardian that stacks marble slabs into a soft leaning tower.",
       "Micro facets split light like river reflections under the Erasmus Bridge.",
@@ -51,7 +51,7 @@
   },
   {
     "id": "compressed-1763493199262-matchasurf",
-    "heading": "Matchasurf Rider",
+    "heading": "Matchasurf",
     "lines": [
       "Surfer silhouettes hide between the layered petals of this totem.",
       "Matcha hues fade into vapor trails swirling around the crown.",
@@ -61,7 +61,7 @@
   },
   {
     "id": "compressed-1763493233532-trashdude",
-    "heading": "Trashdude Guardian",
+    "heading": "Ideaal Rotterdam",
     "lines": [
       "Bottle caps, stickers, and bent tin collide into a hulking protector.",
       "Every dent and fold is left untouched to honor the salvage origins.",
@@ -71,7 +71,7 @@
   },
   {
     "id": "compressed-1763493268226-pigeon-lady",
-    "heading": "Pigeon Lady Idol",
+    "heading": "Pigeon Lady",
     "lines": [
       "An ode to the caretakers who coax pigeons onto their shoulders downtown.",
       "Feather motifs and copper mirrors flutter around the statuette.",
@@ -81,7 +81,7 @@
   },
   {
     "id": "compressed-1763493291035-spiderdude",
-    "heading": "Spiderdude Sentinel",
+    "heading": "Spiderdude",
     "lines": [
       "Angular limbs weave scaffolding that looks mid-parkour leap.",
       "Thread-like struts stretch between ribs like spun webbing.",
@@ -91,7 +91,7 @@
   },
   {
     "id": "compressedwip",
-    "heading": "WIP Prototype",
+    "heading": "Work In Progress...",
     "lines": [
       "Construction lines are still visible to prove this relic is in flux.",
       "Placeholder colors map lighting passes that have yet to be baked.",
