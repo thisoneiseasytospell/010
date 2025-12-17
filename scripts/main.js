@@ -70,13 +70,14 @@ function getGridConfig() {
   const isPortrait = aspect < 1;
 
   if (isPortrait) {
-    // Mobile portrait: 2 columns, 5 rows
+    // Mobile portrait: 1 column, vertical scroll
     return {
-      cols: 2,
-      rows: 5,
-      cellWidth: 2.8,
-      cellHeight: 2.0,
-      modelSize: 1.4
+      cols: 1,
+      rows: 10, // All models in one column
+      cellWidth: 0, // Not used for single column
+      cellHeight: 6.0, // Spacing between models
+      modelSize: 3.5, // Big models
+      isMobileScroll: true
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -85,16 +86,26 @@ function getGridConfig() {
       rows: 2,
       cellWidth: 3.96,
       cellHeight: 4.32,
-      modelSize: 2.916
+      modelSize: 2.916,
+      isMobileScroll: false
     };
   }
 }
 
 function getGridPosition(modelIndex) {
   const config = getGridConfig();
-  const { cols, cellWidth, cellHeight } = config;
-  const rows = Math.ceil(models.length / cols);
+  const { cols, cellWidth, cellHeight, isMobileScroll } = config;
 
+  if (isMobileScroll) {
+    // Mobile: single column, vertically stacked
+    // Y position based on scroll - each model at index * cellHeight
+    return {
+      x: 0,
+      y: -modelIndex * cellHeight // Negative Y goes down
+    };
+  }
+
+  const rows = Math.ceil(models.length / cols);
   const gridWidth = cols * cellWidth;
   const gridHeight = rows * cellHeight;
 
@@ -125,6 +136,33 @@ function updateGridLayout() {
       innerObj.scale.setScalar(targetScale);
     }
   });
+}
+
+// Mobile scroll state
+let mobileScrollY = 0;
+let mobileScrollTarget = 0;
+let mobileScrollVelocity = 0;
+let mobileTouchStartY = 0;
+let mobileTouchStartScroll = 0;
+let mobileCurrentModelIndex = 0;
+let isMobileScrolling = false;
+
+function getMobileScrollBounds() {
+  const config = getGridConfig();
+  if (!config.isMobileScroll) return { min: 0, max: 0 };
+  const totalHeight = (models.length - 1) * config.cellHeight;
+  return { min: 0, max: totalHeight };
+}
+
+function snapToNearestModel() {
+  const config = getGridConfig();
+  if (!config.isMobileScroll) return;
+
+  const cellHeight = config.cellHeight;
+  const nearestIndex = Math.round(mobileScrollTarget / cellHeight);
+  const clampedIndex = Math.max(0, Math.min(nearestIndex, models.length - 1));
+  mobileScrollTarget = clampedIndex * cellHeight;
+  mobileCurrentModelIndex = clampedIndex;
 }
 
 // Scene setup
@@ -603,8 +641,10 @@ const BOUNCE_FACTOR = 0.6; // energy retained on bounce
 
 // Shake detection for party mode
 let shakeDetectionBuffer = [];
-const SHAKE_THRESHOLD = 25; // acceleration magnitude to trigger shake
-const SHAKE_WINDOW = 400; // ms to detect shake pattern
+const SHAKE_THRESHOLD = 30; // acceleration magnitude to trigger shake
+const SHAKE_WINDOW = 600; // ms to detect shake pattern
+let lastMotionTime = 0;
+const MOTION_THROTTLE = 50; // Only process motion every 50ms
 
 function requestMotionPermission() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -628,6 +668,11 @@ function requestMotionPermission() {
 function handleMotion(event) {
   if (!motionEnabled) return;
 
+  // Throttle motion events to reduce CPU load
+  const now = Date.now();
+  if (now - lastMotionTime < MOTION_THROTTLE) return;
+  lastMotionTime = now;
+
   try {
     const accel = event.accelerationIncludingGravity;
     if (!accel) return;
@@ -643,19 +688,19 @@ function handleMotion(event) {
     motion.z = z;
 
     // Detect shake gesture to toggle party mode
-    const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
-    const now = Date.now();
+    const magnitude = Math.sqrt(x * x + y * y + z * z);
 
-    // Add to buffer
-    shakeDetectionBuffer.push({ magnitude, time: now });
+    // Only track high acceleration events
+    if (magnitude > SHAKE_THRESHOLD) {
+      shakeDetectionBuffer.push(now);
+    }
 
-    // Remove old entries
-    shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
+    // Remove old entries (keep only timestamps)
+    shakeDetectionBuffer = shakeDetectionBuffer.filter(t => now - t < SHAKE_WINDOW);
 
-    // Check for shake pattern (multiple high accelerations)
-    const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
-    if (highAccelCount >= 5) {
-      shakeDetectionBuffer = []; // Reset buffer
+    // Check for shake pattern
+    if (shakeDetectionBuffer.length >= 4) {
+      shakeDetectionBuffer = [];
       togglePartyMode();
     }
   } catch (e) {
@@ -767,8 +812,20 @@ function onTouchStart(event) {
     touchStartTime = Date.now();
     touchDragging = false;
     isPinching = false;
+
+    // Mobile scroll
+    const config = getGridConfig();
+    if (config.isMobileScroll && isGridMode) {
+      mobileTouchStartY = touch.clientY;
+      mobileTouchStartScroll = mobileScrollTarget;
+      isMobileScrolling = true;
+      mobileScrollVelocity = 0;
+    }
   }
 }
+
+let lastTouchY = 0;
+let lastTouchTime = 0;
 
 function onTouchMove(event) {
   if (introActive) return;
@@ -802,6 +859,35 @@ function onTouchMove(event) {
     touchDragging = true;
   }
 
+  // Mobile scroll in grid mode
+  const config = getGridConfig();
+  if (config.isMobileScroll && isGridMode && isMobileScrolling) {
+    event.preventDefault();
+
+    const scrollDelta = mobileTouchStartY - touch.clientY;
+    // Convert screen pixels to scene units (larger divisor = slower scroll)
+    const scrollAmount = scrollDelta / 80;
+
+    const bounds = getMobileScrollBounds();
+    mobileScrollTarget = THREE.MathUtils.clamp(
+      mobileTouchStartScroll + scrollAmount,
+      bounds.min,
+      bounds.max
+    );
+
+    // Track velocity for momentum
+    const now = Date.now();
+    if (lastTouchTime > 0) {
+      const dt = now - lastTouchTime;
+      if (dt > 0) {
+        mobileScrollVelocity = (touch.clientY - lastTouchY) / dt * -0.5;
+      }
+    }
+    lastTouchY = touch.clientY;
+    lastTouchTime = now;
+    return;
+  }
+
   // In solo mode, use touch drag to rotate model
   if (!isGridMode && touchDragging) {
     // Prevent scrolling when dragging
@@ -821,6 +907,24 @@ function onTouchEnd(event) {
     if (event.touches.length === 0) {
       return;
     }
+  }
+
+  // Handle mobile scroll end - snap to nearest
+  const config = getGridConfig();
+  if (config.isMobileScroll && isMobileScrolling) {
+    isMobileScrolling = false;
+    lastTouchTime = 0;
+
+    // Apply momentum then snap
+    const bounds = getMobileScrollBounds();
+    mobileScrollTarget = THREE.MathUtils.clamp(
+      mobileScrollTarget + mobileScrollVelocity * 10,
+      bounds.min,
+      bounds.max
+    );
+
+    // Snap to nearest model
+    snapToNearestModel();
   }
 
   if (introActive) {
@@ -859,6 +963,13 @@ function onTouchEnd(event) {
     // Double tap in solo mode goes back to grid
     if (!isGridMode && timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
       toggleMode();
+      return;
+    }
+
+    // On mobile scroll, tap on model goes to solo mode
+    if (config.isMobileScroll && isGridMode) {
+      currentModelIndex = mobileCurrentModelIndex;
+      switchToModel(currentModelIndex);
       return;
     }
 
@@ -1039,7 +1150,13 @@ function updateModeIcon() {
 function updateModelInfoDisplay() {
   if (!soloInfoPanel || !soloInfoTitle) return;
 
-  const currentModel = models[currentModelIndex];
+  // On mobile scroll, show current scroll model's name
+  const config = getGridConfig();
+  const displayIndex = (config.isMobileScroll && isGridMode)
+    ? mobileCurrentModelIndex
+    : currentModelIndex;
+
+  const currentModel = models[displayIndex];
   const info = currentModel ? modelInfoById.get(currentModel.id) : null;
 
   // Remove description body
@@ -1058,7 +1175,9 @@ function updateModelInfoDisplay() {
   soloInfoTitle.textContent = heading;
 
   const hasContent = Boolean(heading);
-  if (!introActive && !isGridMode && hasContent) {
+  // Show in solo mode OR in mobile scroll grid mode
+  const shouldShow = !introActive && hasContent && (!isGridMode || config.isMobileScroll);
+  if (shouldShow) {
     soloInfoPanel.classList.add('visible');
   } else {
     soloInfoPanel.classList.remove('visible');
@@ -1852,6 +1971,26 @@ loadTextContent();
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
+
+  // Mobile scroll - smooth interpolation
+  const config = getGridConfig();
+  if (config.isMobileScroll && isGridMode) {
+    // Smoothly move toward target
+    mobileScrollY = THREE.MathUtils.lerp(mobileScrollY, mobileScrollTarget, 0.15);
+
+    // Move camera to show current scroll position
+    camera.position.y = -mobileScrollY;
+
+    // Update current model index based on scroll
+    const newIndex = Math.round(mobileScrollY / config.cellHeight);
+    if (newIndex !== mobileCurrentModelIndex && newIndex >= 0 && newIndex < models.length) {
+      mobileCurrentModelIndex = newIndex;
+      updateModelInfoDisplay();
+    }
+  } else if (isGridMode) {
+    // Desktop grid mode - camera at origin
+    camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.1);
+  }
 
   if (isGridMode) {
     // GRID MODE: Mouse-follow rotation for all grid models
