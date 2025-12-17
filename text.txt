@@ -1,0 +1,41 @@
+**Context and Situated Knowledge**
+
+Albert was born in a small town in Poland and raised in Norway. Living in Rotterdam as a fourth-year international student, he is attentive to how local “insider” culture forms: the codes, recurring situations, and shared jokes that make a city feel familiar to those who stay longer. His research sits in generative design and looks at how such hyperlocal knowledge can be translated into material form. Rather than conducting extensive fieldwork, he works from everyday observations, a small set of reference photos, and his own experience of moving through the city over time.
+
+Technically, he uses GPT to generate images of miniature scenes in a classical Delftware style, iterating and art-directing the prompts across multiple generations until the scenes feel recognisably “Rotterdam” in tone and attitude. These images are then turned into 3D models, printed in resin, and hand-painted. The figurines can also be viewed online, allowing the work to exist both as a physical set and as a small digital collection.
+
+**Contribution and Research Focus**
+
+The project asks: *How can generative tools help materialise the situated knowledge of a city in physical form?* The outcome is a series of ten figurines, each depicting a specific, recognisable situation from Rotterdam’s everyday life—scenes that longer-term residents and locals are likely to recognise, but that sit outside official or tourist imagery.
+
+A central thread is Rotterdam’s *gedogen* culture: the Dutch habit of informally tolerating things that do not fully align with the rules, and the pragmatic way people negotiate these grey areas. The figurines stage moments where this attitude becomes visible in daily life—small frictions, tolerated shortcuts, or behaviours that everyone knows are “typical Rotterdam”. By moving from GPT-generated Delftware-style scenes to 3D-printed and hand-painted objects, the project shows how generative tools can support a compact, material archive of lived experience. The figurines function as memory objects, modest in scale but dense with shared references, holding onto stories that usually persist only in conversation and practice.
+
+---
+
+**Urgency and Relation to SDG**
+
+010 Totems responds to a simple but pressing issue in rapidly changing cities: which stories of everyday life are kept, and which quietly disappear. Rotterdam is constantly reshaped by people who pass through—students, migrants, commuters—alongside those who stay long term. Large monuments and official histories tend to survive, while small, street-level scenes and jokes that define how a place actually feels are rarely given space. Yet it is precisely these recognisable situations that shape whether a city feels welcoming, understandable, and like somewhere you can belong.
+
+The project takes this cultural layer seriously by turning hyperlocal Rotterdam moments into ten small figurines. Many of the scenes point to the city’s *gedogen* attitude—the informal bending of rules, the tolerated shortcuts, the “everyone knows this happens” situations. By putting these moments into physical form, the work argues that this kind of informal knowledge is not just decoration, but part of what makes a city socially sustainable over time.
+
+Generative tools are used here in a careful way. GPT helps sketch Delftware-style scenes, but each one is steered, selected, turned into a 3D model, printed in resin, and hand-painted. This keeps judgement, taste, and responsibility with the maker, while still using AI to open up new ways of seeing and combining local references. The resulting figurines are modest in scale but durable and easy to share—both as physical objects and online—offering a small, concrete example of how digital tools can help maintain and circulate situated urban memories instead of flattening them.
+
+**Profile & Professional Positioning**
+
+Albert Kozikowski (1997, Poland) is an all-at-once designer, curious observer and AI-optimist, oscillating between the oil capital of Norway and the port city of the Netherlands.
+
+He channels his curiosity into generative, motion, and 3D design, moving then to physical objects you can touch and relate to. He works fast, switching tools and mediums when ideas flatten, using that restlessness to push concepts into something sharper and more compelling. His method is exploratory and conceptually literal: he translates language into form and reduces ideas to their clearest, most essential shape. 
+
+He aims for design and tools that meet people where they are, in plain language and familiar rhythms, with room for memory and habit. Albert relies on input and collaboration to spark ideas and drive the creative process.
+
+He has collaborated with studios and brands around the world, including Studio Dumbar, LVMH, Snøhetta, Canada Goose, and Chanel. His work was recognised with Gold in the European Design Awards 2022 for generative branding for L-nett.
+
+**Freewriting** 
+
+Expats have very different and unique experience of being in a new place compared to tourists or locals. Curious eye notice different things. I was wondering: what makes Rotterdam the place it is? What things are truly local and nowhere else to be seen? Was it always like this? How long will this be something people recognise? Did my friends also notice? Does anyone archive this same way we do archive random websites on the internet? 
+
+For many people I informally interviewed Rotterdam was associated with drug abusers and homeless people infamously standing out from the ordinary. I don’t think this is far from usual metropolis nuisance and I didn’t want to make fun of these people. My focus is capturing unique, harmless and funny moments that are obvious to most (longer) residents. Local freaks come and go, surf canal might disappear one day. Ten ceramic figurines tries to capture each of these moments in a physical form people can relate to. 
+
+I draw heavy inspiration from W+K Amsterdam and UNI_VERSE talks during AdNight 2025 project around dutch culture in general and I was thinking how would Rotterdam specifically would look. I used it also as opportunity to learn more about working with generative tools and art direction. I used plus plan of OpenAI GPT 5.1 for image generation, Claude Sonet 4.1 and Opus 4.5 for web development and Hunyuan 3D from Tencent for 3D models and textures. 
+
+I started with 3D printing models in the academy to determinate most optimal scale and figuring out precision limit. Informally I interviewed my friends and summarised my personal observations throughout the years. Expanded beyond art academy bubble with a local barbershop and Rotterdam exchange student from over 20 years ago. On purpose I rejected any default options: cubic houses, kapsalon, all that jazz.

@@ -15,14 +15,14 @@ const soloInfoBody = document.getElementById('solo-info-body');
 
 // Display state
 let currentModelIndex = 0;
-let isGridMode = false; // Toggle between solo and grid mode
+let isGridMode = true; // Toggle between solo and grid mode - default to grid
 let models = [];
 const mainModels = []; // Large display models (one per model config)
 const thumbnailModels = []; // Small preview models
 const gridModels = []; // Grid layout models (5x2)
 let modelInfoById = new Map();
 
-const SOLO_MODEL_X_OFFSET = -3.1;
+const SOLO_MODEL_X_OFFSET = 0; // Centered on desktop
 const SOLO_INFO_MAX_ROT_Y_DEG = 20;
 const SOLO_INFO_MAX_ROT_Y_RAD = THREE.MathUtils.degToRad(SOLO_INFO_MAX_ROT_Y_DEG);
 const SOLO_INFO_MAX_ROT_X_DEG = 2;
@@ -155,23 +155,244 @@ const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/');
 
 // Lighting - Studio setup
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+const ambient = new THREE.AmbientLight(0xffffff, 2.0);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xd4d4d4, 0.4);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.4);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xfff8f0, 2.0);
+const keyLight = new THREE.DirectionalLight(0x9c9c9c, 1.5);
 keyLight.position.set(8, 10, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.8);
+const fillLight = new THREE.DirectionalLight(0xf0f4ff, 1.6);
 fillLight.position.set(-6, 5, 5);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 1.0);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
+
+// Dark mode
+let isDarkMode = false;
+const lightModeBackground = 0xf5f5f0;
+const darkModeBackground = 0x0a0a0a;
+
+// Store light mode values for toggle
+const lightModeValues = {
+  ambient: { color: 0xffffff, intensity: 2.0 },
+  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
+  key: { color: 0x9c9c9c, intensity: 1.5 },
+  fill: { color: 0xf0f4ff, intensity: 1.6 },
+  rim: { color: 0xffffff, intensity: 0.3 }
+};
+
+const darkModeValues = {
+  ambient: { color: 0x222233, intensity: 0.3 },
+  hemi: { sky: 0x111122, ground: 0x000000, intensity: 0.2 },
+  key: { color: 0x6666aa, intensity: 1.2 },
+  fill: { color: 0x4444aa, intensity: 0.6 },
+  rim: { color: 0x8888ff, intensity: 0.8 }
+};
+
+function flickerLights(callback) {
+  const flickerCount = 4;
+  const flickerDuration = 80;
+  let flickerIndex = 0;
+
+  const originalIntensities = {
+    ambient: ambient.intensity,
+    key: keyLight.intensity,
+    fill: fillLight.intensity,
+    rim: rimLight.intensity,
+    hemi: hemiLight.intensity
+  };
+
+  function flicker() {
+    if (flickerIndex >= flickerCount) {
+      // Restore and apply final values
+      if (callback) callback();
+      return;
+    }
+
+    // Random dim
+    const dimFactor = 0.1 + Math.random() * 0.3;
+    ambient.intensity = originalIntensities.ambient * dimFactor;
+    keyLight.intensity = originalIntensities.key * dimFactor;
+    fillLight.intensity = originalIntensities.fill * dimFactor;
+    rimLight.intensity = originalIntensities.rim * dimFactor;
+    hemiLight.intensity = originalIntensities.hemi * dimFactor;
+
+    setTimeout(() => {
+      // Brief restore
+      ambient.intensity = originalIntensities.ambient * 0.7;
+      keyLight.intensity = originalIntensities.key * 0.7;
+      fillLight.intensity = originalIntensities.fill * 0.7;
+      rimLight.intensity = originalIntensities.rim * 0.7;
+      hemiLight.intensity = originalIntensities.hemi * 0.7;
+
+      flickerIndex++;
+      setTimeout(flicker, flickerDuration / 2);
+    }, flickerDuration);
+  }
+
+  flicker();
+}
+
+function applyLightingMode(values) {
+  ambient.color.setHex(values.ambient.color);
+  ambient.intensity = values.ambient.intensity;
+  hemiLight.color.setHex(values.hemi.sky);
+  hemiLight.groundColor.setHex(values.hemi.ground);
+  hemiLight.intensity = values.hemi.intensity;
+  keyLight.color.setHex(values.key.color);
+  keyLight.intensity = values.key.intensity;
+  fillLight.color.setHex(values.fill.color);
+  fillLight.intensity = values.fill.intensity;
+  rimLight.color.setHex(values.rim.color);
+  rimLight.intensity = values.rim.intensity;
+}
+
+function toggleDarkMode() {
+  flickerLights(() => {
+    isDarkMode = !isDarkMode;
+    scene.background.setHex(isDarkMode ? darkModeBackground : lightModeBackground);
+    applyLightingMode(isDarkMode ? darkModeValues : lightModeValues);
+
+    // Toggle dark mode class on body for text colors
+    document.body.classList.toggle('dark-mode', isDarkMode);
+
+    // Update controls if visible
+    if (lightingControlsVisible) {
+      setupLightingControls();
+    }
+  });
+}
+
+// PARTY MODE 🎉
+let isPartyMode = false;
+let partyAnimationId = null;
+let partyStartTime = 0;
+const partyColors = [
+  0xff0066, 0x00ff66, 0x6600ff, 0xff6600, 0x00ffff, 0xff00ff, 0xffff00
+];
+const policeRed = 0xff0022;
+const policeBlue = 0x0044ff;
+
+function startPartyMode() {
+  if (isPartyMode) return;
+  isPartyMode = true;
+  isDarkMode = true;
+  partyStartTime = Date.now();
+
+  document.body.classList.add('dark-mode', 'party-mode');
+  scene.background.setHex(darkModeBackground); // Keep dark background
+
+  animateParty();
+}
+
+function stopPartyMode() {
+  isPartyMode = false;
+  document.body.classList.remove('party-mode');
+
+  if (partyAnimationId) {
+    cancelAnimationFrame(partyAnimationId);
+    partyAnimationId = null;
+  }
+}
+
+let partyToggleCooldown = false;
+
+function togglePartyMode() {
+  // Prevent rapid toggling
+  if (partyToggleCooldown) return;
+  partyToggleCooldown = true;
+  setTimeout(() => { partyToggleCooldown = false; }, 1500);
+
+  if (isPartyMode) {
+    // Exit party mode - go back to light mode
+    stopPartyMode();
+    isDarkMode = false;
+    document.body.classList.remove('dark-mode', 'party-mode');
+    scene.background.setHex(lightModeBackground);
+    applyLightingMode(lightModeValues);
+  } else {
+    // Enter party mode
+    isDarkMode = true;
+    document.body.classList.add('dark-mode');
+    scene.background.setHex(darkModeBackground);
+    startPartyMode();
+  }
+}
+
+function animateParty() {
+  if (!isPartyMode) return;
+
+  const time = (Date.now() - partyStartTime) / 1000;
+  const beat = Math.sin(time * 8) * 0.5 + 0.5;
+  const fastBeat = Math.sin(time * 16) * 0.5 + 0.5;
+
+  // Police lights - alternating red and blue
+  const policePhase = Math.floor(time * 6) % 2;
+  const policeFlash = Math.sin(time * 20) > 0;
+
+  // Explosion effect - random bright white flash
+  const isExplosion = Math.random() > 0.97;
+  const explosionIntensity = isExplosion ? 8 + Math.random() * 5 : 0;
+
+  // Cycle through disco colors
+  const colorIndex = Math.floor(time * 2) % partyColors.length;
+  const nextColorIndex = (colorIndex + 1) % partyColors.length;
+  const colorLerp = (time * 2) % 1;
+
+  const discoColor1 = new THREE.Color(partyColors[colorIndex]);
+  const discoColor2 = new THREE.Color(partyColors[nextColorIndex]);
+  discoColor1.lerp(discoColor2, colorLerp);
+
+  // Key light - disco colors with explosions
+  if (isExplosion) {
+    keyLight.color.setHex(0xffffff);
+    keyLight.intensity = explosionIntensity;
+  } else {
+    keyLight.color.copy(discoColor1);
+    keyLight.intensity = 1.5 + beat * 2;
+  }
+
+  // Fill light - police red
+  if (policePhase === 0 && policeFlash) {
+    fillLight.color.setHex(policeRed);
+    fillLight.intensity = 3 + fastBeat * 2;
+  } else {
+    fillLight.color.setHex(partyColors[(colorIndex + 2) % partyColors.length]);
+    fillLight.intensity = 1 + fastBeat;
+  }
+
+  // Rim light - police blue
+  if (policePhase === 1 && policeFlash) {
+    rimLight.color.setHex(policeBlue);
+    rimLight.intensity = 3 + fastBeat * 2;
+  } else {
+    rimLight.color.setHex(partyColors[(colorIndex + 4) % partyColors.length]);
+    rimLight.intensity = 0.8 + beat * 1.5;
+  }
+
+  // Ambient - pulsing with occasional explosion boost
+  ambient.color.setHex(isExplosion ? 0xffffff : 0x222233);
+  ambient.intensity = isExplosion ? 2 : (0.15 + beat * 0.15);
+
+  // Hemisphere for extra police effect
+  if (policeFlash) {
+    hemiLight.color.setHex(policePhase === 0 ? policeRed : policeBlue);
+    hemiLight.groundColor.setHex(policePhase === 0 ? policeBlue : policeRed);
+    hemiLight.intensity = 0.5 + fastBeat * 0.5;
+  } else {
+    hemiLight.color.setHex(0x111122);
+    hemiLight.groundColor.setHex(0x000000);
+    hemiLight.intensity = 0.2;
+  }
+
+  partyAnimationId = requestAnimationFrame(animateParty);
+}
 
 // Lighting debug controls
 const lightingControls = document.getElementById('lighting-controls');
@@ -283,10 +504,10 @@ function toggleLightingControls() {
 
 // Press 'L' to toggle lighting controls
 window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey) return;
+
   if (e.key === 'l' || e.key === 'L') {
-    if (!e.ctrlKey && !e.metaKey) {
-      toggleLightingControls();
-    }
+    toggleLightingControls();
   }
 });
 
@@ -380,21 +601,10 @@ const MOTION_DAMPING = 0.92; // velocity decay
 const MOTION_SENSITIVITY = 0.008; // how much acceleration affects velocity
 const BOUNCE_FACTOR = 0.6; // energy retained on bounce
 
-// Grid shake physics - infinite sliding grid
-let gridShakeActive = false;
+// Shake detection for party mode
 let shakeDetectionBuffer = [];
-const SHAKE_THRESHOLD = 20; // acceleration magnitude to trigger shake
-const SHAKE_WINDOW = 500; // ms to detect shake pattern
-
-// Infinite grid configuration
-const INFINITE_GRID_COLS = 5; // columns in the infinite grid
-const INFINITE_GRID_ROWS = 7; // rows in the infinite grid
-const INFINITE_GRID_CELL_W = 2.4; // cell width
-const INFINITE_GRID_CELL_H = 2.4; // cell height
-const INFINITE_GRID_SLIDE_SPEED = 0.15; // how fast grid responds to tilt
-const infiniteGridModels = []; // Array of clone groups for infinite grid
-let infiniteGridOffset = { x: 0, y: 0 }; // current scroll offset
-let infiniteGridVelocity = { x: 0, y: 0 }; // velocity for smooth movement
+const SHAKE_THRESHOLD = 25; // acceleration magnitude to trigger shake
+const SHAKE_WINDOW = 400; // ms to detect shake pattern
 
 function requestMotionPermission() {
   if (typeof DeviceMotionEvent !== 'undefined' &&
@@ -432,212 +642,28 @@ function handleMotion(event) {
     motion.y = y;
     motion.z = z;
 
-    // Detect shake gesture for grid mode
-    if (isGridMode && !gridShakeActive) {
-      const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
-      const now = Date.now();
+    // Detect shake gesture to toggle party mode
+    const magnitude = Math.sqrt(motion.x * motion.x + motion.y * motion.y + motion.z * motion.z);
+    const now = Date.now();
 
-      // Add to buffer
-      shakeDetectionBuffer.push({ magnitude, time: now });
+    // Add to buffer
+    shakeDetectionBuffer.push({ magnitude, time: now });
 
-      // Remove old entries
-      shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
+    // Remove old entries
+    shakeDetectionBuffer = shakeDetectionBuffer.filter(entry => now - entry.time < SHAKE_WINDOW);
 
-      // Check for shake pattern (multiple high accelerations)
-      const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
-      if (highAccelCount >= 3) {
-        activateGridShake();
-      }
+    // Check for shake pattern (multiple high accelerations)
+    const highAccelCount = shakeDetectionBuffer.filter(entry => entry.magnitude > SHAKE_THRESHOLD).length;
+    if (highAccelCount >= 5) {
+      shakeDetectionBuffer = []; // Reset buffer
+      togglePartyMode();
     }
   } catch (e) {
     // Silently ignore errors
   }
 }
 
-function activateGridShake() {
-  gridShakeActive = true;
-  shakeDetectionBuffer = [];
-
-  // Hide original grid models
-  gridModels.forEach((entry) => {
-    if (entry && entry.object) {
-      entry.object.visible = false;
-    }
-  });
-
-  // Reset offset and velocity
-  infiniteGridOffset = { x: 0, y: 0 };
-  infiniteGridVelocity = { x: 0, y: 0 };
-
-  // Spawn infinite grid of clones
-  spawnInfiniteGrid();
-}
-
-function spawnInfiniteGrid() {
-  // Remove any existing infinite grid clones
-  removeInfiniteGrid();
-
-  // Check if we have any valid source models
-  const validSources = gridModels.filter(entry =>
-    entry && entry.object && entry.object.userData.innerObject
-  );
-
-  if (validSources.length === 0) {
-    console.warn('No valid source models for infinite grid');
-    deactivateGridShake();
-    return;
-  }
-
-  const totalCells = INFINITE_GRID_COLS * INFINITE_GRID_ROWS;
-
-  // Create clones to fill the infinite grid
-  for (let i = 0; i < totalCells; i++) {
-    // Pick a source model (cycle through valid sources)
-    const sourceEntry = validSources[i % validSources.length];
-    const innerObj = sourceEntry.object.userData.innerObject;
-
-    // Clone the inner object
-    const clonedInner = innerObj.clone(true);
-
-    // Clone materials
-    clonedInner.traverse((child) => {
-      if (child.isMesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        child.material = materials.map((mat) => mat.clone());
-      }
-    });
-
-    // Create group for clone
-    const cloneGroup = new THREE.Group();
-    cloneGroup.add(clonedInner);
-
-    // Calculate grid position
-    const col = i % INFINITE_GRID_COLS;
-    const row = Math.floor(i / INFINITE_GRID_COLS);
-    const baseX = (col - (INFINITE_GRID_COLS - 1) / 2) * INFINITE_GRID_CELL_W;
-    const baseY = (row - (INFINITE_GRID_ROWS - 1) / 2) * INFINITE_GRID_CELL_H;
-
-    cloneGroup.position.set(baseX, baseY, 0);
-    cloneGroup.userData.isInfiniteGridClone = true;
-    cloneGroup.userData.innerObject = clonedInner;
-    cloneGroup.userData.gridCol = col;
-    cloneGroup.userData.gridRow = row;
-    cloneGroup.userData.baseX = baseX;
-    cloneGroup.userData.baseY = baseY;
-
-    // Random rotation for variety
-    clonedInner.rotation.y = (Math.random() - 0.5) * Math.PI * 0.5 + Math.PI * 0.1;
-
-    scene.add(cloneGroup);
-    infiniteGridModels.push(cloneGroup);
-  }
-}
-
-function updateGridShakePhysics() {
-  if (!gridShakeActive || !isGridMode) return;
-
-  const isPortrait = window.innerWidth / window.innerHeight < 1;
-  if (!isPortrait) {
-    deactivateGridShake();
-    return;
-  }
-
-  // Get tilt input from gyroscope
-  const tiltX = gyroEnabled ? gyro.gamma : 0; // left/right tilt (-1 to 1)
-  const tiltY = gyroEnabled ? gyro.beta : 0;  // forward/back tilt (-1 to 1)
-
-  // Apply tilt to velocity with smooth acceleration
-  infiniteGridVelocity.x += tiltX * INFINITE_GRID_SLIDE_SPEED;
-  infiniteGridVelocity.y -= tiltY * INFINITE_GRID_SLIDE_SPEED;
-
-  // Apply damping for smooth deceleration
-  infiniteGridVelocity.x *= 0.95;
-  infiniteGridVelocity.y *= 0.95;
-
-  // Update offset
-  infiniteGridOffset.x += infiniteGridVelocity.x;
-  infiniteGridOffset.y += infiniteGridVelocity.y;
-
-  // Calculate grid dimensions for wrapping
-  const gridWidth = INFINITE_GRID_COLS * INFINITE_GRID_CELL_W;
-  const gridHeight = INFINITE_GRID_ROWS * INFINITE_GRID_CELL_H;
-
-  // Update all clone positions with wrapping for infinite scroll effect
-  infiniteGridModels.forEach((clone) => {
-    if (!clone) return;
-
-    // Calculate position with offset
-    let newX = clone.userData.baseX + infiniteGridOffset.x;
-    let newY = clone.userData.baseY + infiniteGridOffset.y;
-
-    // Wrap horizontally (infinite scroll)
-    const halfWidth = gridWidth / 2;
-    while (newX > halfWidth + INFINITE_GRID_CELL_W / 2) {
-      newX -= gridWidth;
-      clone.userData.baseX -= gridWidth;
-    }
-    while (newX < -halfWidth - INFINITE_GRID_CELL_W / 2) {
-      newX += gridWidth;
-      clone.userData.baseX += gridWidth;
-    }
-
-    // Wrap vertically (infinite scroll)
-    const halfHeight = gridHeight / 2;
-    while (newY > halfHeight + INFINITE_GRID_CELL_H / 2) {
-      newY -= gridHeight;
-      clone.userData.baseY -= gridHeight;
-    }
-    while (newY < -halfHeight - INFINITE_GRID_CELL_H / 2) {
-      newY += gridHeight;
-      clone.userData.baseY += gridHeight;
-    }
-
-    clone.position.x = newX;
-    clone.position.y = newY;
-
-    // Subtle rotation based on movement
-    const innerObj = clone.userData.innerObject;
-    if (innerObj) {
-      innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, -infiniteGridVelocity.y * 0.3, 0.1);
-      innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, infiniteGridVelocity.x * 0.2, 0.1);
-    }
-  });
-}
-
-function deactivateGridShake() {
-  gridShakeActive = false;
-
-  // Remove infinite grid clones
-  removeInfiniteGrid();
-
-  // Show original grid models again
-  gridModels.forEach((entry) => {
-    if (entry && entry.object) {
-      entry.object.visible = true;
-    }
-  });
-
-  // Reset grid positions
-  updateGridLayout();
-}
-
-function removeInfiniteGrid() {
-  infiniteGridModels.forEach((clone) => {
-    if (clone) {
-      scene.remove(clone);
-      clone.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat) => mat.dispose());
-        }
-      });
-    }
-  });
-  infiniteGridModels.length = 0;
-  infiniteGridOffset = { x: 0, y: 0 };
-  infiniteGridVelocity = { x: 0, y: 0 };
-}
+// Old infinite grid shake removed - shake now toggles party mode
 
 function updateMotionPhysics() {
   if (!motionEnabled || isGridMode) return;
@@ -842,14 +868,9 @@ function onTouchEnd(event) {
 
 function handleInteraction() {
   if (models.length === 0) return;
+  if (introJustExited) return; // Ignore click that dismissed intro
 
   if (isGridMode) {
-    // If in infinite grid shake mode, tap exits back to normal grid
-    if (gridShakeActive) {
-      deactivateGridShake();
-      return;
-    }
-
     raycaster.setFromCamera(mouse, camera);
 
     const gridObjects = gridModels
@@ -973,10 +994,6 @@ function toggleMode() {
     });
   } else {
     // SOLO MODE
-    // Clean up grid shake state and clones
-    gridShakeActive = false;
-    removeInfiniteGrid();
-
     // Hide grid mode elements
     gridModels.forEach(model => {
       if (model.object) model.object.visible = false;
@@ -1020,12 +1037,13 @@ function updateModeIcon() {
 }
 
 function updateModelInfoDisplay() {
-  if (!soloInfoPanel || !soloInfoTitle || !soloInfoBody) return;
+  if (!soloInfoPanel || !soloInfoTitle) return;
 
   const currentModel = models[currentModelIndex];
   const info = currentModel ? modelInfoById.get(currentModel.id) : null;
 
-  soloInfoBody.innerHTML = '';
+  // Remove description body
+  if (soloInfoBody) soloInfoBody.innerHTML = '';
 
   if (!currentModel) {
     soloInfoTitle.textContent = '';
@@ -1033,23 +1051,13 @@ function updateModelInfoDisplay() {
     return;
   }
 
+  // Just show the name
   const heading = (info && typeof info.heading === 'string' && info.heading.trim().length > 0)
     ? info.heading
     : (currentModel.title || '');
   soloInfoTitle.textContent = heading;
 
-  // On mobile (portrait), only show title, no description
-  const isPortrait = window.innerWidth / window.innerHeight < 1;
-  if (!isPortrait && info && Array.isArray(info.lines)) {
-    info.lines.forEach((line) => {
-      if (typeof line !== 'string' || !line.trim()) return;
-      const paragraph = document.createElement('p');
-      paragraph.textContent = line.trim();
-      soloInfoBody.appendChild(paragraph);
-    });
-  }
-
-  const hasContent = Boolean(heading || soloInfoBody.children.length > 0);
+  const hasContent = Boolean(heading);
   if (!introActive && !isGridMode && hasContent) {
     soloInfoPanel.classList.add('visible');
   } else {
@@ -1058,43 +1066,25 @@ function updateModelInfoDisplay() {
 }
 
 function updateSoloInfoTransform() {
-  if (!soloInfoPanel) return;
-
-  const canAnimate = soloInfoPanel.classList.contains('visible') && !introActive && !isGridMode;
-  const mainModel = mainModels[currentModelIndex];
-  const modelGroup = mainModel && mainModel.object;
-  const innerObj = modelGroup && modelGroup.userData.innerObject;
-  const modelTransitioning = Boolean(modelGroup && modelGroup.userData && modelGroup.userData.isTransitioning);
-  const fallbackY = THREE.MathUtils.clamp(mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR, -SOLO_INFO_MAX_ROT_Y_RAD, SOLO_INFO_MAX_ROT_Y_RAD);
-  const fallbackX = softenVerticalRotation(-mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR);
-
-  if (canAnimate) {
-    if (modelTransitioning) {
-      infoRotationX = THREE.MathUtils.lerp(infoRotationX, fallbackX, 0.35);
-      infoRotationY = THREE.MathUtils.lerp(infoRotationY, fallbackY, 0.35);
-    } else if (innerObj) {
-      const limitedY = THREE.MathUtils.clamp(innerObj.rotation.y, -SOLO_INFO_MAX_ROT_Y_RAD, SOLO_INFO_MAX_ROT_Y_RAD);
-      const limitedX = softenVerticalRotation(innerObj.rotation.x);
-      infoRotationX = limitedX;
-      infoRotationY = limitedY;
-    } else {
-      infoRotationX = fallbackX;
-      infoRotationY = fallbackY;
-    }
-  } else {
-    infoRotationX = THREE.MathUtils.lerp(infoRotationX, 0, 0.18);
-    infoRotationY = THREE.MathUtils.lerp(infoRotationY, 0, 0.18);
-  }
-
-  const xDeg = THREE.MathUtils.radToDeg(infoRotationX);
-  const yDeg = THREE.MathUtils.radToDeg(infoRotationY);
-  soloInfoPanel.style.setProperty('--solo-info-rot-x', `${xDeg.toFixed(3)}deg`);
-  soloInfoPanel.style.setProperty('--solo-info-rot-y', `${yDeg.toFixed(3)}deg`);
+  // Label is now static - no mouse following or special effects
+  // Color is handled by CSS dark mode classes
 }
+
+// Prevent immediate interaction after intro exit
+let introJustExited = false;
 
 function exitIntro() {
   if (!introActive) return;
   introActive = false;
+  introJustExited = true;
+
+  // Small delay before allowing interactions
+  setTimeout(() => {
+    introJustExited = false;
+  }, 300);
+
+  // Enable scrolling
+  document.body.classList.remove('intro-active');
 
   if (introOverlay) {
     introOverlay.classList.add('hidden');
@@ -1111,9 +1101,8 @@ function exitIntro() {
   clearIntroPromptTimers();
 
   // Always enter grid mode after intro (for both desktop and mobile)
-  if (!isGridMode) {
-    toggleMode();
-  }
+  isGridMode = false; // Force to false first
+  toggleMode(); // Then toggle to grid mode
 
   // Trigger grid intro animation
   gridIntroAnimationId += 1;
@@ -1333,11 +1322,11 @@ window.addEventListener('keydown', (event) => {
   } else if (event.key === 'ArrowRight') {
     const newIndex = (currentModelIndex + 1) % models.length;
     switchToModel(newIndex);
-  } else if (event.key === 'g' || event.key === 'G' || event.code === 'Space') {
-    if (event.code === 'Space') {
-      event.preventDefault();
-    }
+  } else if (event.key === 'g' || event.key === 'G') {
     toggleMode();
+  } else if (event.code === 'Space') {
+    event.preventDefault();
+    togglePartyMode();
   }
 });
 
@@ -1760,14 +1749,111 @@ async function init() {
 
 init();
 
+// Text section - load and reveal
+const textContent = document.getElementById('text-content');
+const goUpBtn = document.getElementById('go-up-btn');
+
+// Set intro-active class initially to prevent scrolling
+document.body.classList.add('intro-active');
+
+async function loadTextContent() {
+  try {
+    const response = await fetch('./text.txt');
+    if (!response.ok) throw new Error('Failed to load text.txt');
+    const text = await response.text();
+
+    // Split into lines - each line becomes its own element
+    const lines = text.split('\n');
+
+    lines.forEach((line, index) => {
+      const p = document.createElement('p');
+      p.className = 'text-line';
+      p.dataset.index = index;
+
+      if (line.trim() === '') {
+        // Empty line becomes a spacer
+        p.innerHTML = '&nbsp;';
+        p.classList.add('spacer');
+      } else {
+        // Parse **bold** text
+        const parsedLine = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        p.innerHTML = parsedLine;
+      }
+
+      textContent.appendChild(p);
+    });
+
+    // Setup intersection observer for blur reveal
+    setupBlurReveal();
+  } catch (error) {
+    console.warn('Could not load text.txt:', error);
+  }
+}
+
+let revealQueue = [];
+let isRevealing = false;
+
+function setupBlurReveal() {
+  const textLines = document.querySelectorAll('.text-line');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && !entry.target.classList.contains('revealed')) {
+        // Add to queue for staggered reveal
+        if (!revealQueue.includes(entry.target)) {
+          revealQueue.push(entry.target);
+        }
+        processRevealQueue();
+      } else if (!entry.isIntersecting && entry.target.classList.contains('revealed')) {
+        // Blur back when scrolling out of view
+        entry.target.classList.remove('revealed');
+        // Remove from queue if it was waiting
+        const queueIndex = revealQueue.indexOf(entry.target);
+        if (queueIndex > -1) {
+          revealQueue.splice(queueIndex, 1);
+        }
+      }
+    });
+  }, {
+    threshold: 0.1,
+    rootMargin: '50px 0px -50px 0px'
+  });
+
+  textLines.forEach(line => observer.observe(line));
+}
+
+function processRevealQueue() {
+  if (isRevealing || revealQueue.length === 0) return;
+
+  isRevealing = true;
+
+  // Sort by index to reveal in order
+  revealQueue.sort((a, b) => parseInt(a.dataset.index) - parseInt(b.dataset.index));
+
+  const element = revealQueue.shift();
+  element.classList.add('revealed');
+
+  // Delay before revealing next line
+  setTimeout(() => {
+    isRevealing = false;
+    processRevealQueue();
+  }, 60);
+}
+
+// Go Up button
+if (goUpBtn) {
+  goUpBtn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+loadTextContent();
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
 
   if (isGridMode) {
-    // Update grid shake physics if active
-    updateGridShakePhysics();
-
     // GRID MODE: Mouse-follow rotation for all grid models
     gridModels.forEach((model) => {
       const group = model.object;
@@ -1859,7 +1945,7 @@ function animate() {
         targetRotationX = gyro.beta * Math.PI * 0.4; // Mirrored: tilt forward = look up
       } else if (mouseIsMoving) {
         targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        targetRotationX = mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR; // Mirrored
+        targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR; // Mouse up = look at top
       } else {
         targetRotationX = 0;
         targetRotationY = 0;
