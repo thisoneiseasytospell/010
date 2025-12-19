@@ -71,12 +71,13 @@ function getGridConfig() {
 
   if (isPortrait) {
     // Mobile portrait: 1 column, vertical scroll
+    // cellHeight < 6 (half frustum) so next model peeks at bottom
     return {
       cols: 1,
       rows: 10, // All models in one column
       cellWidth: 0, // Not used for single column
-      cellHeight: 6.0, // Spacing between models
-      modelSize: 3.5, // Big models
+      cellHeight: 5.0, // Spacing - allows next model to peek at bottom
+      modelSize: 3.2, // Slightly smaller to leave room for text
       isMobileScroll: true
     };
   } else {
@@ -99,9 +100,10 @@ function getGridPosition(modelIndex) {
   if (isMobileScroll) {
     // Mobile: single column, vertically stacked
     // Y position based on scroll - each model at index * cellHeight
+    // Offset by 0.8 to better center models visually in viewport
     return {
       x: 0,
-      y: -modelIndex * cellHeight // Negative Y goes down
+      y: -modelIndex * cellHeight + 0.8 // Negative Y goes down, +0.8 centers visually
     };
   }
 
@@ -347,20 +349,23 @@ function togglePartyMode() {
   partyToggleCooldown = true;
   setTimeout(() => { partyToggleCooldown = false; }, 1500);
 
-  if (isPartyMode) {
-    // Exit party mode - go back to light mode
-    stopPartyMode();
-    isDarkMode = false;
-    document.body.classList.remove('dark-mode', 'party-mode');
-    scene.background.setHex(lightModeBackground);
-    applyLightingMode(lightModeValues);
-  } else {
-    // Enter party mode
-    isDarkMode = true;
-    document.body.classList.add('dark-mode');
-    scene.background.setHex(darkModeBackground);
-    startPartyMode();
-  }
+  // Always flicker before toggling
+  flickerLights(() => {
+    if (isPartyMode) {
+      // Exit party mode - go back to light mode
+      stopPartyMode();
+      isDarkMode = false;
+      document.body.classList.remove('dark-mode', 'party-mode');
+      scene.background.setHex(lightModeBackground);
+      applyLightingMode(lightModeValues);
+    } else {
+      // Enter party mode
+      isDarkMode = true;
+      document.body.classList.add('dark-mode');
+      scene.background.setHex(darkModeBackground);
+      startPartyMode();
+    }
+  });
 }
 
 function animateParty() {
@@ -752,6 +757,11 @@ let touchDragRotationY = 0;
 let touchDragTargetX = 0;
 let touchDragTargetY = 0;
 
+// Mobile grid touch rotation
+let mobileGridTouchRotating = false;
+let mobileGridTouchRotationY = 0;
+let mobileGridTouchTargetY = 0;
+
 // Pinch to zoom
 let isPinching = false;
 let initialPinchDistance = 0;
@@ -864,27 +874,43 @@ function onTouchMove(event) {
   if (config.isMobileScroll && isGridMode && isMobileScrolling) {
     event.preventDefault();
 
-    const scrollDelta = mobileTouchStartY - touch.clientY;
-    // Convert screen pixels to scene units (larger divisor = slower scroll)
-    const scrollAmount = scrollDelta / 80;
+    const deltaX = touch.clientX - touchStartX;
+    const deltaY = touch.clientY - mobileTouchStartY;
 
-    const bounds = getMobileScrollBounds();
-    mobileScrollTarget = THREE.MathUtils.clamp(
-      mobileTouchStartScroll + scrollAmount,
-      bounds.min,
-      bounds.max
-    );
-
-    // Track velocity for momentum
-    const now = Date.now();
-    if (lastTouchTime > 0) {
-      const dt = now - lastTouchTime;
-      if (dt > 0) {
-        mobileScrollVelocity = (touch.clientY - lastTouchY) / dt * -0.5;
-      }
+    // Determine if this is a horizontal rotation or vertical scroll
+    // Once we start one mode, stick with it until touch ends
+    if (!mobileGridTouchRotating && Math.abs(deltaX) > Math.abs(deltaY) * 1.5 && Math.abs(deltaX) > 20) {
+      // Horizontal drag - switch to rotation mode
+      mobileGridTouchRotating = true;
     }
-    lastTouchY = touch.clientY;
-    lastTouchTime = now;
+
+    if (mobileGridTouchRotating) {
+      // Horizontal touch rotation for current model
+      mobileGridTouchTargetY = (deltaX / window.innerWidth) * Math.PI * 1.2;
+    } else {
+      // Vertical scroll
+      const scrollDelta = mobileTouchStartY - touch.clientY;
+      // Convert screen pixels to scene units (larger divisor = slower scroll)
+      const scrollAmount = scrollDelta / 80;
+
+      const bounds = getMobileScrollBounds();
+      mobileScrollTarget = THREE.MathUtils.clamp(
+        mobileTouchStartScroll + scrollAmount,
+        bounds.min,
+        bounds.max
+      );
+
+      // Track velocity for momentum
+      const now = Date.now();
+      if (lastTouchTime > 0) {
+        const dt = now - lastTouchTime;
+        if (dt > 0) {
+          mobileScrollVelocity = (touch.clientY - lastTouchY) / dt * -0.5;
+        }
+      }
+      lastTouchY = touch.clientY;
+      lastTouchTime = now;
+    }
     return;
   }
 
@@ -915,16 +941,23 @@ function onTouchEnd(event) {
     isMobileScrolling = false;
     lastTouchTime = 0;
 
-    // Apply momentum then snap
-    const bounds = getMobileScrollBounds();
-    mobileScrollTarget = THREE.MathUtils.clamp(
-      mobileScrollTarget + mobileScrollVelocity * 10,
-      bounds.min,
-      bounds.max
-    );
+    if (mobileGridTouchRotating) {
+      // Save rotation and reset target
+      mobileGridTouchRotationY += mobileGridTouchTargetY;
+      mobileGridTouchTargetY = 0;
+      mobileGridTouchRotating = false;
+    } else {
+      // Apply momentum then snap
+      const bounds = getMobileScrollBounds();
+      mobileScrollTarget = THREE.MathUtils.clamp(
+        mobileScrollTarget + mobileScrollVelocity * 10,
+        bounds.min,
+        bounds.max
+      );
 
-    // Snap to nearest model
-    snapToNearestModel();
+      // Snap to nearest model
+      snapToNearestModel();
+    }
   }
 
   if (introActive) {
@@ -1023,6 +1056,12 @@ function onClick(event) {
   }
 
   if (models.length === 0) return;
+
+  // Don't trigger interaction if user is selecting text
+  const selection = window.getSelection();
+  if (selection && selection.toString().length > 0) {
+    return;
+  }
 
   updateMousePosition(event);
   handleInteraction();
@@ -1985,6 +2024,9 @@ function animate() {
     const newIndex = Math.round(mobileScrollY / config.cellHeight);
     if (newIndex !== mobileCurrentModelIndex && newIndex >= 0 && newIndex < models.length) {
       mobileCurrentModelIndex = newIndex;
+      // Reset touch rotation when switching to new model
+      mobileGridTouchRotationY = 0;
+      mobileGridTouchTargetY = 0;
       updateModelInfoDisplay();
     }
   } else if (isGridMode) {
@@ -1994,7 +2036,7 @@ function animate() {
 
   if (isGridMode) {
     // GRID MODE: Mouse-follow rotation for all grid models
-    gridModels.forEach((model) => {
+    gridModels.forEach((model, modelIndex) => {
       const group = model.object;
       if (!group || !group.visible) return;
       const innerObj = group.userData.innerObject;
@@ -2024,6 +2066,24 @@ function animate() {
           innerObj.rotation.set(baseRotationX, baseRotationY, 0);
           group.userData.gridIntroAnimating = false;
         }
+        return;
+      }
+
+      // Mobile grid touch rotation - only for current model
+      const isMobileScrollConfig = config.isMobileScroll;
+      if (isMobileScrollConfig && modelIndex === mobileCurrentModelIndex) {
+        const touchRotY = mobileGridTouchRotationY + mobileGridTouchTargetY;
+        const targetRotationY = baseRotationY + touchRotY;
+
+        // Also allow gyro influence on top of touch rotation
+        let gyroOffsetY = 0;
+        if (gyroEnabled) {
+          gyroOffsetY = gyro.gamma * Math.PI * 0.2;
+        }
+
+        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY + gyroOffsetY, 0.12);
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.1);
+        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
         return;
       }
 

@@ -91,9 +91,9 @@ body:not(.intro-active) {
 
 #intro-cursor-prompt {
   position: fixed;
-  left: 0;
-  top: 0;
-  transform: translate3d(-9999px, -9999px, 0);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, 80px);
   font-size: 0.75rem;
   letter-spacing: 0.35em;
   text-transform: uppercase;
@@ -105,12 +105,11 @@ body:not(.intro-active) {
   box-shadow: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.35s ease;
+  transition: opacity 0.35s ease, left 0.15s ease, top 0.15s ease;
 }
 
 #intro-cursor-prompt.visible {
   opacity: 1;
-  transform: translate3d(0, 0, 0);
 }
 
 #scene-container.physics-mode {
@@ -226,26 +225,26 @@ body.dark-mode #solo-info-title {
 @media (max-width: 900px) {
   #solo-info-panel {
     top: auto;
-    bottom: 10%;
+    bottom: 6%;
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
 
   #solo-info-title {
     font-size: clamp(0.85rem, 3.5vw, 1.1rem);
+    background: rgba(245, 245, 240, 0.8);
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+  }
+
+  body.dark-mode #solo-info-title {
+    background: rgba(10, 10, 10, 0.8);
   }
 }
 
 /* Mobile intro overlay */
 @media (pointer: coarse) {
   #intro-cursor-prompt {
-    /* On touch devices, center the prompt instead of following cursor */
-    position: fixed;
-    left: 50% !important;
-    top: 50% !important;
-    transform: translate(-50%, 100px) !important;
-    opacity: 1 !important;
-  }
-
-  #intro-cursor-prompt.visible {
+    /* On touch devices, keep centered (no cursor follow) */
     transform: translate(-50%, 100px) !important;
   }
 
