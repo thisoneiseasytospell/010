@@ -99,10 +99,10 @@ function getGridPosition(modelIndex) {
 
   if (isMobileScroll) {
     // Mobile: single column, vertically stacked
-    // Models are center-aligned, so just apply small offset to push down
+    // Models are center-aligned, negative offset pushes down
     return {
       x: 0,
-      y: -modelIndex * cellHeight - 0.5 // -0.5 pushes down slightly
+      y: -modelIndex * cellHeight - 1.0 // Push down more for top padding
     };
   }
 
@@ -756,13 +756,10 @@ let touchDragRotationY = 0;
 let touchDragTargetX = 0;
 let touchDragTargetY = 0;
 
-// Mobile grid touch rotation with momentum
+// Mobile grid touch rotation with momentum (horizontal only)
 let mobileGridTouchRotating = false;
-let mobileGridTouchRotationX = 0;
 let mobileGridTouchRotationY = 0;
-let mobileGridTouchTargetX = 0;
 let mobileGridTouchTargetY = 0;
-let mobileGridRotationVelocityX = 0;
 let mobileGridRotationVelocityY = 0;
 let lastMobileRotationTime = 0;
 const MOBILE_ROTATION_FRICTION = 0.95; // Velocity decay per frame
@@ -892,21 +889,18 @@ function onTouchMove(event) {
     }
 
     if (mobileGridTouchRotating) {
-      // Full touch rotation for current model (both X and Y axes)
+      // Horizontal rotation only (Y axis) - no vertical to avoid scroll conflicts
       const newTargetY = (deltaX / window.innerWidth) * Math.PI * MOBILE_ROTATION_SENSITIVITY;
-      const newTargetX = (deltaY / window.innerHeight) * Math.PI * MOBILE_ROTATION_SENSITIVITY * 0.6;
 
       // Track velocity for momentum
       const now = Date.now();
       if (lastMobileRotationTime > 0) {
         const dt = Math.max(now - lastMobileRotationTime, 1);
         mobileGridRotationVelocityY = (newTargetY - mobileGridTouchTargetY) / dt * 16; // Normalize to ~60fps
-        mobileGridRotationVelocityX = (newTargetX - mobileGridTouchTargetX) / dt * 16;
       }
       lastMobileRotationTime = now;
 
       mobileGridTouchTargetY = newTargetY;
-      mobileGridTouchTargetX = newTargetX;
     } else {
       // Vertical scroll
       const scrollDelta = mobileTouchStartY - touch.clientY;
@@ -964,9 +958,7 @@ function onTouchEnd(event) {
     if (mobileGridTouchRotating) {
       // Save rotation and apply momentum
       mobileGridTouchRotationY += mobileGridTouchTargetY;
-      mobileGridTouchRotationX += mobileGridTouchTargetX;
       mobileGridTouchTargetY = 0;
-      mobileGridTouchTargetX = 0;
       mobileGridTouchRotating = false;
       lastMobileRotationTime = 0;
       // Momentum continues in animate loop via velocity
@@ -1934,6 +1926,14 @@ async function init() {
 
 init();
 
+// Request gyro/motion permissions early on touch devices
+// iOS requires user gesture, but Android can request immediately
+if (isTouchDevice) {
+  // Try requesting immediately (works on Android)
+  requestGyroPermission();
+  requestMotionPermission();
+}
+
 // Text section - load and reveal
 const textContent = document.getElementById('text-content');
 const goUpBtn = document.getElementById('go-up-btn');
@@ -2052,11 +2052,8 @@ function animate() {
     if (newIndex !== mobileCurrentModelIndex && newIndex >= 0 && newIndex < models.length) {
       mobileCurrentModelIndex = newIndex;
       // Reset touch rotation when switching to new model
-      mobileGridTouchRotationX = 0;
       mobileGridTouchRotationY = 0;
-      mobileGridTouchTargetX = 0;
       mobileGridTouchTargetY = 0;
-      mobileGridRotationVelocityX = 0;
       mobileGridRotationVelocityY = 0;
       updateModelInfoDisplay();
     }
@@ -2100,36 +2097,29 @@ function animate() {
         return;
       }
 
-      // Mobile grid touch rotation - only for current model
+      // Mobile grid touch rotation - only for current model (horizontal only)
       const isMobileScrollConfig = config.isMobileScroll;
       if (isMobileScrollConfig && modelIndex === mobileCurrentModelIndex) {
         // Apply momentum when not actively touching
         if (!mobileGridTouchRotating) {
           mobileGridTouchRotationY += mobileGridRotationVelocityY;
-          mobileGridTouchRotationX += mobileGridRotationVelocityX;
           mobileGridRotationVelocityY *= MOBILE_ROTATION_FRICTION;
-          mobileGridRotationVelocityX *= MOBILE_ROTATION_FRICTION;
 
           // Stop tiny movements
           if (Math.abs(mobileGridRotationVelocityY) < 0.0001) mobileGridRotationVelocityY = 0;
-          if (Math.abs(mobileGridRotationVelocityX) < 0.0001) mobileGridRotationVelocityX = 0;
         }
 
         const touchRotY = mobileGridTouchRotationY + mobileGridTouchTargetY;
-        const touchRotX = mobileGridTouchRotationX + mobileGridTouchTargetX;
         const targetRotationY = baseRotationY + touchRotY;
-        const targetRotationX = baseRotationX + touchRotX;
 
         // Also allow gyro influence on top of touch rotation
         let gyroOffsetY = 0;
-        let gyroOffsetX = 0;
         if (gyroEnabled) {
           gyroOffsetY = gyro.gamma * Math.PI * 0.2;
-          gyroOffsetX = gyro.beta * Math.PI * 0.15;
         }
 
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY + gyroOffsetY, 0.15);
-        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX + gyroOffsetX, 0.15);
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.1);
         innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
         return;
       }
