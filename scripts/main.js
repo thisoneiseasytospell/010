@@ -76,7 +76,7 @@ function getGridConfig() {
       cols: 1,
       rows: 10, // All models in one column
       cellWidth: 0, // Not used for single column
-      cellHeight: 7.0, // Larger spacing for better separation
+      cellHeight: 6.0, // Spacing between models
       modelSize: 3.0, // Model size
       isMobileScroll: true
     };
@@ -100,8 +100,8 @@ function getGridPosition(modelIndex) {
   if (isMobileScroll) {
     // Mobile: single column, vertically stacked
     // Y position based on scroll - each model at index * cellHeight
-    // Models are base-aligned, so offset by ~1.5 to center visually (half model height)
-    const modelCenterOffset = config.modelSize * 0.5;
+    // Offset to center visually, pushed down slightly
+    const modelCenterOffset = config.modelSize * 0.5 - 0.6; // -0.6 pushes down
     return {
       x: 0,
       y: -modelIndex * cellHeight + modelCenterOffset
