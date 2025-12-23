@@ -99,12 +99,10 @@ function getGridPosition(modelIndex) {
 
   if (isMobileScroll) {
     // Mobile: single column, vertically stacked
-    // Y position based on scroll - each model at index * cellHeight
-    // Offset to center visually, pushed down slightly
-    const modelCenterOffset = config.modelSize * 0.5 - 0.6; // -0.6 pushes down
+    // Models are center-aligned, so just apply small offset to push down
     return {
       x: 0,
-      y: -modelIndex * cellHeight + modelCenterOffset
+      y: -modelIndex * cellHeight - 0.5 // -0.5 pushes down slightly
     };
   }
 
@@ -1719,11 +1717,14 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   scaledBBox.getCenter(scaledCenter);
   object3d.position.sub(scaledCenter);
 
-  // Align the base so every grid item rests on the same baseline
-  object3d.updateMatrixWorld(true);
-  const finalBBox = new THREE.Box3().setFromObject(object3d);
-  const minY = finalBBox.min.y;
-  object3d.position.y -= minY;
+  // For desktop grid: align base so models rest on same baseline
+  // For mobile scroll: keep center-aligned for even visual spacing
+  if (!gridConfig.isMobileScroll) {
+    object3d.updateMatrixWorld(true);
+    const finalBBox = new THREE.Box3().setFromObject(object3d);
+    const minY = finalBBox.min.y;
+    object3d.position.y -= minY;
+  }
 
   const overrideDeg = GRID_ROTATION_OVERRIDE_DEG[modelConfig.id];
   const rotationDeg = typeof modelConfig.gridRotationDeg === 'number'
