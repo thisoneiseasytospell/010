@@ -2097,7 +2097,8 @@ function animate() {
         return;
       }
 
-      // Mobile grid touch rotation - only for current model (horizontal only)
+      // Mobile grid touch rotation - only for current model
+      // Horizontal (Y) from touch, vertical (X) from gyro only
       const isMobileScrollConfig = config.isMobileScroll;
       if (isMobileScrollConfig && modelIndex === mobileCurrentModelIndex) {
         // Apply momentum when not actively touching
@@ -2112,14 +2113,16 @@ function animate() {
         const touchRotY = mobileGridTouchRotationY + mobileGridTouchTargetY;
         const targetRotationY = baseRotationY + touchRotY;
 
-        // Also allow gyro influence on top of touch rotation
+        // Gyro controls both axes - touch only adds to horizontal
         let gyroOffsetY = 0;
+        let gyroOffsetX = 0;
         if (gyroEnabled) {
           gyroOffsetY = gyro.gamma * Math.PI * 0.2;
+          gyroOffsetX = gyro.beta * Math.PI * 0.15; // Vertical tilt from gyro
         }
 
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY + gyroOffsetY, 0.15);
-        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.1);
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX + gyroOffsetX, 0.12);
         innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
         return;
       }
