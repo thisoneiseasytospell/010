@@ -13,6 +13,15 @@ const soloInfoPanel = document.getElementById('solo-info-panel');
 const soloInfoTitle = document.getElementById('solo-info-title');
 const soloInfoBody = document.getElementById('solo-info-body');
 
+// Mobile dropdown elements
+const mobileHeader = document.getElementById('mobile-header');
+const modelSelectorBtn = document.getElementById('model-selector-btn');
+const currentModelNameEl = document.getElementById('current-model-name');
+const modelDropdown = document.getElementById('model-dropdown');
+const modelDropdownList = document.getElementById('model-dropdown-list');
+const modelDropdownInfo = document.getElementById('model-dropdown-info');
+let dropdownOpen = false;
+
 // Display state
 let currentModelIndex = 0;
 let isGridMode = true; // Toggle between solo and grid mode - default to grid
@@ -71,12 +80,12 @@ function getGridConfig() {
 
   if (isPortrait) {
     // Mobile portrait: 1 column, vertical scroll
-    // cellHeight controls spacing - larger = more space between models
+    // cellHeight controls spacing - smaller = closer together
     return {
       cols: 1,
       rows: 10, // All models in one column
       cellWidth: 0, // Not used for single column
-      cellHeight: 6.0, // Spacing between models
+      cellHeight: 5.0, // Closer spacing between models
       modelSize: 3.0, // Model size
       isMobileScroll: true
     };
@@ -1229,6 +1238,11 @@ function updateModelInfoDisplay() {
     : (currentModel.title || '');
   soloInfoTitle.textContent = heading;
 
+  // Update mobile header model name
+  if (currentModelNameEl) {
+    currentModelNameEl.textContent = heading || 'Model';
+  }
+
   const hasContent = Boolean(heading);
   // Show in solo mode OR in mobile scroll grid mode
   const shouldShow = !introActive && hasContent && (!isGridMode || config.isMobileScroll);
@@ -1237,12 +1251,112 @@ function updateModelInfoDisplay() {
   } else {
     soloInfoPanel.classList.remove('visible');
   }
+
+  // Update dropdown active state
+  updateDropdownActiveState(displayIndex);
 }
 
 function updateSoloInfoTransform() {
   // Label is now static - no mouse following or special effects
   // Color is handled by CSS dark mode classes
 }
+
+// Mobile dropdown functions
+function toggleDropdown() {
+  dropdownOpen = !dropdownOpen;
+  if (modelDropdown) {
+    modelDropdown.classList.toggle('visible', dropdownOpen);
+    modelDropdown.classList.toggle('hidden', !dropdownOpen);
+  }
+  if (modelSelectorBtn) {
+    modelSelectorBtn.classList.toggle('open', dropdownOpen);
+  }
+}
+
+function closeDropdown() {
+  dropdownOpen = false;
+  if (modelDropdown) {
+    modelDropdown.classList.remove('visible');
+    modelDropdown.classList.add('hidden');
+  }
+  if (modelSelectorBtn) {
+    modelSelectorBtn.classList.remove('open');
+  }
+}
+
+function populateDropdown() {
+  if (!modelDropdownList) return;
+  modelDropdownList.innerHTML = '';
+
+  models.forEach((model, index) => {
+    const info = modelInfoById.get(model.id);
+    const name = (info && info.heading) ? info.heading : (model.title || `Model ${index + 1}`);
+
+    const item = document.createElement('div');
+    item.className = 'dropdown-item';
+    item.textContent = name;
+    item.dataset.index = index;
+
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      scrollToModel(index);
+      closeDropdown();
+    });
+
+    modelDropdownList.appendChild(item);
+  });
+}
+
+function updateDropdownActiveState(activeIndex) {
+  if (!modelDropdownList) return;
+  const items = modelDropdownList.querySelectorAll('.dropdown-item');
+  items.forEach((item, index) => {
+    item.classList.toggle('active', index === activeIndex);
+  });
+}
+
+function scrollToModel(index) {
+  const config = getGridConfig();
+  if (!config.isMobileScroll) return;
+
+  // Smooth scroll by setting target - the animate loop will interpolate
+  mobileScrollTarget = index * config.cellHeight;
+  mobileCurrentModelIndex = index;
+
+  // Reset touch rotation for new model
+  mobileGridTouchRotationY = 0;
+  mobileGridTouchTargetY = 0;
+  mobileGridRotationVelocityY = 0;
+
+  updateModelInfoDisplay();
+}
+
+// Setup dropdown event listeners
+if (modelSelectorBtn) {
+  modelSelectorBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDropdown();
+  });
+}
+
+if (modelDropdownInfo) {
+  modelDropdownInfo.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeDropdown();
+    // Scroll to text section
+    const textSection = document.getElementById('text-section');
+    if (textSection) {
+      textSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (dropdownOpen && modelDropdown && !modelDropdown.contains(e.target) && e.target !== modelSelectorBtn) {
+    closeDropdown();
+  }
+});
 
 // Prevent immediate interaction after intro exit
 let introJustExited = false;
@@ -1922,6 +2036,7 @@ async function init() {
   updateThumbnailHighlights();
   updateModeIcon();
   updateModelInfoDisplay();
+  populateDropdown();
 }
 
 init();
