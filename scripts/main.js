@@ -394,6 +394,10 @@ function togglePartyMode() {
       scene.background.setHex(darkModeBackground);
       startPartyMode();
     }
+    // Update model list colors for dark/light mode
+    if (typeof updateModelListActiveState === 'function') {
+      updateModelListActiveState();
+    }
   });
 }
 
@@ -1782,6 +1786,13 @@ const MODEL_LIST_MIN_SIZE = 7;
 const MODEL_LIST_MIN_OPACITY = 0.15;
 const GOLDEN_RATIO = 1.618;
 
+function getModelListColor(opacity) {
+  // Return appropriate color based on dark mode
+  return isDarkMode
+    ? `rgba(245, 247, 255, ${opacity})`
+    : `rgba(8, 9, 13, ${opacity})`;
+}
+
 function updateModelListActiveState() {
   if (!modelListItems) return;
   const items = modelListItems.querySelectorAll('.model-list-item');
@@ -1800,7 +1811,7 @@ function updateModelListActiveState() {
     const opacity = Math.max(MODEL_LIST_MIN_OPACITY, MODEL_LIST_ACTIVE_OPACITY / Math.pow(ratio, distance * 0.6));
 
     item.style.fontSize = `${size}px`;
-    item.style.color = `rgba(8, 9, 13, ${opacity})`;
+    item.style.color = getModelListColor(opacity);
   });
 }
 
@@ -1830,7 +1841,7 @@ function updateModelListHover(mouseY) {
     const opacity = Math.max(MODEL_LIST_MIN_OPACITY, MODEL_LIST_ACTIVE_OPACITY / Math.pow(GOLDEN_RATIO, distance * 0.3));
 
     item.style.fontSize = `${size}px`;
-    item.style.color = `rgba(8, 9, 13, ${opacity})`;
+    item.style.color = getModelListColor(opacity);
   });
 }
 
