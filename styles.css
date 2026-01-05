@@ -36,6 +36,9 @@ body {
   overflow-y: auto;
 }
 
+body.dark-mode {
+  background: #0a0a0a;
+}
 
 body.intro-active {
   overflow: hidden;
@@ -548,5 +551,111 @@ body:not(.intro-active) {
   opacity: 0.4;
   letter-spacing: 0.03em;
   text-align: center;
+}
+
+/* Dark Mode Styles */
+body.dark-mode #ui-overlay h1 {
+  color: #f5f7ff;
+}
+
+body.dark-mode #grid-mode-icon {
+  fill: rgba(245, 247, 255, 0.35);
+}
+
+body.dark-mode #solo-info-title {
+  color: rgba(245, 247, 255, 0.6);
+}
+
+body.dark-mode #solo-go-top {
+  color: rgba(245, 247, 255, 0.6);
+}
+
+body.dark-mode #solo-go-top:hover {
+  color: rgba(245, 247, 255, 0.9);
+}
+
+body.dark-mode .model-list-item {
+  color: rgba(245, 247, 255, 0.4);
+}
+
+body.dark-mode .model-list-item.active {
+  color: rgba(245, 247, 255, 0.6);
+}
+
+body.dark-mode .model-list-item:hover {
+  color: rgba(245, 247, 255, 0.8) !important;
+}
+
+body.dark-mode #model-list-go-top {
+  color: rgba(245, 247, 255, 0.6);
+}
+
+body.dark-mode #model-list-go-top:hover {
+  color: rgba(245, 247, 255, 0.9);
+}
+
+body.dark-mode #mobile-header-left h1 {
+  color: rgba(245, 247, 255, 0.6);
+}
+
+body.dark-mode #model-selector-btn {
+  color: rgba(245, 247, 255, 0.8);
+}
+
+body.dark-mode #model-dropdown {
+  background: rgba(20, 20, 25, 0.95);
+}
+
+body.dark-mode .dropdown-item {
+  color: rgba(245, 247, 255, 0.7);
+}
+
+body.dark-mode .dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode .dropdown-item.active {
+  color: #f5f7ff;
+}
+
+body.dark-mode .dropdown-info-btn {
+  color: rgba(245, 247, 255, 0.5);
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .dropdown-info-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode #text-section {
+  background: #0a0a0a;
+}
+
+body.dark-mode .text-line {
+  color: #f5f7ff;
+}
+
+body.dark-mode .text-line.revealed {
+  opacity: 0.85;
+}
+
+body.dark-mode #page-footer {
+  color: #f5f7ff;
+}
+
+/* Party Mode Effects */
+body.party-mode .text-line.revealed {
+  animation: partyText 0.3s infinite;
+}
+
+@keyframes partyText {
+  0% { color: #ff0066; }
+  14% { color: #ff0022; }
+  28% { color: #0044ff; }
+  42% { color: #00ff66; }
+  56% { color: #ff00ff; }
+  70% { color: #00ffff; }
+  84% { color: #ffff00; }
+  100% { color: #ff0066; }
 }
 
