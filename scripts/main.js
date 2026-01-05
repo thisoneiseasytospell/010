@@ -26,16 +26,15 @@ let dropdownOpen = false;
 let currentModelIndex = 0;
 let isGridMode = true; // Toggle between solo and grid mode - default to grid
 let models = [];
-const mainModels = []; // Large display models (one per model config)
-const thumbnailModels = []; // Small preview models
-const gridModels = []; // Grid layout models (5x2)
+const sceneModels = []; // Single set of models used for both grid and solo modes
 let modelInfoById = new Map();
 
+// Scale factors for different modes
+const GRID_MODEL_SIZE = 2.916;
+const SOLO_MODEL_SIZE = 4.725;
+
 const SOLO_MODEL_X_OFFSET = 0; // Centered on desktop
-const SOLO_INFO_MAX_ROT_Y_DEG = 20;
-const SOLO_INFO_MAX_ROT_Y_RAD = THREE.MathUtils.degToRad(SOLO_INFO_MAX_ROT_Y_DEG);
-const SOLO_INFO_MAX_ROT_X_DEG = 2;
-const SOLO_INFO_MAX_ROT_X_RAD = THREE.MathUtils.degToRad(SOLO_INFO_MAX_ROT_X_DEG);
+const SOLO_MODEL_Y_OFFSET = 0; // Centered in solo mode
 const SOLO_MODEL_TRANSITION_SPEED = 0.12;
 const SOLO_MODEL_TRANSITION_THRESHOLD = 0.01;
 const SOLO_MOUSE_ROTATION_Y_FACTOR = 0.25;
@@ -50,15 +49,6 @@ let introPromptAnimating = false;
 
 let gridIntroRandomizationPending = false;
 let gridIntroAnimationId = 0;
-let infoRotationX = 0;
-let infoRotationY = 0;
-
-function softenVerticalRotation(radians) {
-  if (SOLO_INFO_MAX_ROT_X_RAD === 0) return 0;
-  const normalized = THREE.MathUtils.clamp(radians / SOLO_INFO_MAX_ROT_X_RAD, -1, 1);
-  const softened = Math.sign(normalized) * Math.pow(Math.abs(normalized), 1.35);
-  return softened * SOLO_INFO_MAX_ROT_X_RAD;
-}
 
 if (gridModeIcon) {
   gridModeIcon.addEventListener('click', (event) => {
@@ -122,8 +112,8 @@ function getGridPosition(modelIndex) {
   const row = Math.floor(modelIndex / cols);
 
   const x = (col * cellWidth) - (gridWidth / 2) + (cellWidth / 2);
-  // Center the grid vertically
-  const y = (rows / 2 - row - 0.5) * cellHeight;
+  // Center the grid vertically, offset for bottom-aligned models
+  const y = (rows / 2 - row - 0.5) * cellHeight - (config.modelSize / 2);
 
   return { x, y };
 }
@@ -131,7 +121,7 @@ function getGridPosition(modelIndex) {
 function updateGridLayout() {
   const config = getGridConfig();
 
-  gridModels.forEach((entry, index) => {
+  sceneModels.forEach((entry, index) => {
     if (!entry || !entry.object) return;
 
     const pos = getGridPosition(index);
@@ -141,7 +131,7 @@ function updateGridLayout() {
     const innerObj = entry.object.userData.innerObject;
     if (innerObj && entry.object.userData.baseScale) {
       const baseScale = entry.object.userData.baseScale;
-      const targetScale = baseScale * (config.modelSize / 2.916); // Scale relative to desktop size
+      const targetScale = baseScale * (config.modelSize / GRID_MODEL_SIZE);
       innerObj.scale.setScalar(targetScale);
     }
   });
@@ -156,7 +146,6 @@ let mobileTouchStartScroll = 0;
 let mobileCurrentModelIndex = 0;
 let isMobileScrolling = false;
 let mobileHeaderVisible = true;
-let lastMobileScrollDirection = 0; // -1 = up, 1 = down
 let mobileScrollShowTimer = null;
 
 function getMobileScrollBounds() {
@@ -286,352 +275,6 @@ const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
 
-// Dark mode
-let isDarkMode = false;
-const lightModeBackground = 0xf5f5f0;
-const darkModeBackground = 0x0a0a0a;
-
-// Store light mode values for toggle
-const lightModeValues = {
-  ambient: { color: 0xffffff, intensity: 2.0 },
-  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
-  key: { color: 0x9c9c9c, intensity: 1.5 },
-  fill: { color: 0xf0f4ff, intensity: 1.6 },
-  rim: { color: 0xffffff, intensity: 0.3 }
-};
-
-const darkModeValues = {
-  ambient: { color: 0x222233, intensity: 0.3 },
-  hemi: { sky: 0x111122, ground: 0x000000, intensity: 0.2 },
-  key: { color: 0x6666aa, intensity: 1.2 },
-  fill: { color: 0x4444aa, intensity: 0.6 },
-  rim: { color: 0x8888ff, intensity: 0.8 }
-};
-
-function flickerLights(callback) {
-  const flickerCount = 4;
-  const flickerDuration = 80;
-  let flickerIndex = 0;
-
-  const originalIntensities = {
-    ambient: ambient.intensity,
-    key: keyLight.intensity,
-    fill: fillLight.intensity,
-    rim: rimLight.intensity,
-    hemi: hemiLight.intensity
-  };
-
-  function flicker() {
-    if (flickerIndex >= flickerCount) {
-      // Restore and apply final values
-      if (callback) callback();
-      return;
-    }
-
-    // Random dim
-    const dimFactor = 0.1 + Math.random() * 0.3;
-    ambient.intensity = originalIntensities.ambient * dimFactor;
-    keyLight.intensity = originalIntensities.key * dimFactor;
-    fillLight.intensity = originalIntensities.fill * dimFactor;
-    rimLight.intensity = originalIntensities.rim * dimFactor;
-    hemiLight.intensity = originalIntensities.hemi * dimFactor;
-
-    setTimeout(() => {
-      // Brief restore
-      ambient.intensity = originalIntensities.ambient * 0.7;
-      keyLight.intensity = originalIntensities.key * 0.7;
-      fillLight.intensity = originalIntensities.fill * 0.7;
-      rimLight.intensity = originalIntensities.rim * 0.7;
-      hemiLight.intensity = originalIntensities.hemi * 0.7;
-
-      flickerIndex++;
-      setTimeout(flicker, flickerDuration / 2);
-    }, flickerDuration);
-  }
-
-  flicker();
-}
-
-function applyLightingMode(values) {
-  ambient.color.setHex(values.ambient.color);
-  ambient.intensity = values.ambient.intensity;
-  hemiLight.color.setHex(values.hemi.sky);
-  hemiLight.groundColor.setHex(values.hemi.ground);
-  hemiLight.intensity = values.hemi.intensity;
-  keyLight.color.setHex(values.key.color);
-  keyLight.intensity = values.key.intensity;
-  fillLight.color.setHex(values.fill.color);
-  fillLight.intensity = values.fill.intensity;
-  rimLight.color.setHex(values.rim.color);
-  rimLight.intensity = values.rim.intensity;
-}
-
-function toggleDarkMode() {
-  flickerLights(() => {
-    isDarkMode = !isDarkMode;
-    scene.background.setHex(isDarkMode ? darkModeBackground : lightModeBackground);
-    applyLightingMode(isDarkMode ? darkModeValues : lightModeValues);
-
-    // Toggle dark mode class on body for text colors
-    document.body.classList.toggle('dark-mode', isDarkMode);
-
-    // Update controls if visible
-    if (lightingControlsVisible) {
-      setupLightingControls();
-    }
-
-    // Update model list colors
-    updateModelListActiveState();
-  });
-}
-
-// PARTY MODE 🎉
-let isPartyMode = false;
-let partyAnimationId = null;
-let partyStartTime = 0;
-const partyColors = [
-  0xff0066, 0x00ff66, 0x6600ff, 0xff6600, 0x00ffff, 0xff00ff, 0xffff00
-];
-const policeRed = 0xff0022;
-const policeBlue = 0x0044ff;
-
-function startPartyMode() {
-  if (isPartyMode) return;
-  isPartyMode = true;
-  isDarkMode = true;
-  partyStartTime = Date.now();
-
-  document.body.classList.add('dark-mode', 'party-mode');
-  scene.background.setHex(darkModeBackground); // Keep dark background
-
-  animateParty();
-}
-
-function stopPartyMode() {
-  isPartyMode = false;
-  document.body.classList.remove('party-mode');
-
-  if (partyAnimationId) {
-    cancelAnimationFrame(partyAnimationId);
-    partyAnimationId = null;
-  }
-}
-
-let partyToggleCooldown = false;
-
-function togglePartyMode() {
-  // Prevent rapid toggling
-  if (partyToggleCooldown) return;
-  partyToggleCooldown = true;
-  setTimeout(() => { partyToggleCooldown = false; }, 1500);
-
-  // Always flicker before toggling
-  flickerLights(() => {
-    if (isPartyMode) {
-      // Exit party mode - go back to light mode
-      stopPartyMode();
-      isDarkMode = false;
-      document.body.classList.remove('dark-mode', 'party-mode');
-      scene.background.setHex(lightModeBackground);
-      applyLightingMode(lightModeValues);
-    } else {
-      // Enter party mode
-      isDarkMode = true;
-      document.body.classList.add('dark-mode');
-      scene.background.setHex(darkModeBackground);
-      startPartyMode();
-    }
-  });
-}
-
-function animateParty() {
-  if (!isPartyMode) return;
-
-  const time = (Date.now() - partyStartTime) / 1000;
-  const beat = Math.sin(time * 8) * 0.5 + 0.5;
-  const fastBeat = Math.sin(time * 16) * 0.5 + 0.5;
-
-  // Police lights - alternating red and blue
-  const policePhase = Math.floor(time * 6) % 2;
-  const policeFlash = Math.sin(time * 20) > 0;
-
-  // Explosion effect - random bright white flash
-  const isExplosion = Math.random() > 0.97;
-  const explosionIntensity = isExplosion ? 8 + Math.random() * 5 : 0;
-
-  // Cycle through disco colors
-  const colorIndex = Math.floor(time * 2) % partyColors.length;
-  const nextColorIndex = (colorIndex + 1) % partyColors.length;
-  const colorLerp = (time * 2) % 1;
-
-  const discoColor1 = new THREE.Color(partyColors[colorIndex]);
-  const discoColor2 = new THREE.Color(partyColors[nextColorIndex]);
-  discoColor1.lerp(discoColor2, colorLerp);
-
-  // Key light - disco colors with explosions
-  if (isExplosion) {
-    keyLight.color.setHex(0xffffff);
-    keyLight.intensity = explosionIntensity;
-  } else {
-    keyLight.color.copy(discoColor1);
-    keyLight.intensity = 1.5 + beat * 2;
-  }
-
-  // Fill light - police red
-  if (policePhase === 0 && policeFlash) {
-    fillLight.color.setHex(policeRed);
-    fillLight.intensity = 3 + fastBeat * 2;
-  } else {
-    fillLight.color.setHex(partyColors[(colorIndex + 2) % partyColors.length]);
-    fillLight.intensity = 1 + fastBeat;
-  }
-
-  // Rim light - police blue
-  if (policePhase === 1 && policeFlash) {
-    rimLight.color.setHex(policeBlue);
-    rimLight.intensity = 3 + fastBeat * 2;
-  } else {
-    rimLight.color.setHex(partyColors[(colorIndex + 4) % partyColors.length]);
-    rimLight.intensity = 0.8 + beat * 1.5;
-  }
-
-  // Ambient - pulsing with occasional explosion boost
-  ambient.color.setHex(isExplosion ? 0xffffff : 0x222233);
-  ambient.intensity = isExplosion ? 2 : (0.15 + beat * 0.15);
-
-  // Hemisphere for extra police effect
-  if (policeFlash) {
-    hemiLight.color.setHex(policePhase === 0 ? policeRed : policeBlue);
-    hemiLight.groundColor.setHex(policePhase === 0 ? policeBlue : policeRed);
-    hemiLight.intensity = 0.5 + fastBeat * 0.5;
-  } else {
-    hemiLight.color.setHex(0x111122);
-    hemiLight.groundColor.setHex(0x000000);
-    hemiLight.intensity = 0.2;
-  }
-
-  partyAnimationId = requestAnimationFrame(animateParty);
-}
-
-// Lighting debug controls
-const lightingControls = document.getElementById('lighting-controls');
-let lightingControlsVisible = false;
-
-function setupLightingControls() {
-  const ctrlAmbient = document.getElementById('ctrl-ambient');
-  const ctrlKey = document.getElementById('ctrl-key');
-  const ctrlKeyColor = document.getElementById('ctrl-key-color');
-  const ctrlFill = document.getElementById('ctrl-fill');
-  const ctrlFillColor = document.getElementById('ctrl-fill-color');
-  const ctrlRim = document.getElementById('ctrl-rim');
-  const ctrlRimColor = document.getElementById('ctrl-rim-color');
-  const ctrlHemiSky = document.getElementById('ctrl-hemi-sky');
-  const ctrlHemiGround = document.getElementById('ctrl-hemi-ground');
-  const ctrlCopy = document.getElementById('ctrl-copy');
-
-  // Set initial values from current lighting
-  if (ctrlAmbient) {
-    ctrlAmbient.value = ambient.intensity;
-    document.getElementById('val-ambient').textContent = ambient.intensity.toFixed(1);
-    ctrlAmbient.addEventListener('input', (e) => {
-      ambient.intensity = parseFloat(e.target.value);
-      document.getElementById('val-ambient').textContent = ambient.intensity.toFixed(1);
-    });
-  }
-
-  if (ctrlKey) {
-    ctrlKey.value = keyLight.intensity;
-    document.getElementById('val-key').textContent = keyLight.intensity.toFixed(1);
-    ctrlKey.addEventListener('input', (e) => {
-      keyLight.intensity = parseFloat(e.target.value);
-      document.getElementById('val-key').textContent = keyLight.intensity.toFixed(1);
-    });
-  }
-  if (ctrlKeyColor) {
-    ctrlKeyColor.value = '#' + keyLight.color.getHexString();
-    ctrlKeyColor.addEventListener('input', (e) => {
-      keyLight.color.set(e.target.value);
-    });
-  }
-
-  if (ctrlFill) {
-    ctrlFill.value = fillLight.intensity;
-    document.getElementById('val-fill').textContent = fillLight.intensity.toFixed(1);
-    ctrlFill.addEventListener('input', (e) => {
-      fillLight.intensity = parseFloat(e.target.value);
-      document.getElementById('val-fill').textContent = fillLight.intensity.toFixed(1);
-    });
-  }
-  if (ctrlFillColor) {
-    ctrlFillColor.value = '#' + fillLight.color.getHexString();
-    ctrlFillColor.addEventListener('input', (e) => {
-      fillLight.color.set(e.target.value);
-    });
-  }
-
-  if (ctrlRim) {
-    ctrlRim.value = rimLight.intensity;
-    document.getElementById('val-rim').textContent = rimLight.intensity.toFixed(1);
-    ctrlRim.addEventListener('input', (e) => {
-      rimLight.intensity = parseFloat(e.target.value);
-      document.getElementById('val-rim').textContent = rimLight.intensity.toFixed(1);
-    });
-  }
-  if (ctrlRimColor) {
-    ctrlRimColor.value = '#' + rimLight.color.getHexString();
-    ctrlRimColor.addEventListener('input', (e) => {
-      rimLight.color.set(e.target.value);
-    });
-  }
-
-  if (ctrlHemiSky) {
-    ctrlHemiSky.value = '#' + hemiLight.color.getHexString();
-    ctrlHemiSky.addEventListener('input', (e) => {
-      hemiLight.color.set(e.target.value);
-    });
-  }
-  if (ctrlHemiGround) {
-    ctrlHemiGround.value = '#' + hemiLight.groundColor.getHexString();
-    ctrlHemiGround.addEventListener('input', (e) => {
-      hemiLight.groundColor.set(e.target.value);
-    });
-  }
-
-  if (ctrlCopy) {
-    ctrlCopy.addEventListener('click', () => {
-      const values = `
-ambient: 0x${ambient.color.getHexString()}, ${ambient.intensity.toFixed(1)}
-hemi: sky 0x${hemiLight.color.getHexString()}, ground 0x${hemiLight.groundColor.getHexString()}, ${hemiLight.intensity.toFixed(1)}
-key: 0x${keyLight.color.getHexString()}, ${keyLight.intensity.toFixed(1)}
-fill: 0x${fillLight.color.getHexString()}, ${fillLight.intensity.toFixed(1)}
-rim: 0x${rimLight.color.getHexString()}, ${rimLight.intensity.toFixed(1)}
-      `.trim();
-      navigator.clipboard.writeText(values).then(() => {
-        ctrlCopy.textContent = 'Copied!';
-        setTimeout(() => { ctrlCopy.textContent = 'Copy Values'; }, 1500);
-      });
-    });
-  }
-}
-
-function toggleLightingControls() {
-  lightingControlsVisible = !lightingControlsVisible;
-  if (lightingControls) {
-    lightingControls.classList.toggle('hidden', !lightingControlsVisible);
-  }
-}
-
-// Press 'L' to toggle lighting controls
-window.addEventListener('keydown', (e) => {
-  if (e.ctrlKey || e.metaKey) return;
-
-  if (e.key === 'l' || e.key === 'L') {
-    toggleLightingControls();
-  }
-});
-
-setupLightingControls();
-
 // Mouse tracking
 const mouse = new THREE.Vector2();
 let mouseIsMoving = false;
@@ -640,7 +283,6 @@ const raycaster = new THREE.Raycaster();
 
 // Mobile / touch detection
 const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-const isMobile = isTouchDevice && window.innerWidth <= 900;
 
 // Gyroscope support
 let gyroEnabled = false;
@@ -710,120 +352,6 @@ function handleGyro(event) {
   }
 }
 
-// Accelerometer for shake/motion physics
-let motionEnabled = false;
-const motion = { x: 0, y: 0, z: 0 }; // acceleration values
-const modelVelocity = { x: 0, y: 0 }; // model movement velocity (solo mode)
-const modelOffset = { x: 0, y: 0 }; // current model offset from center (solo mode)
-const BOX_BOUNDS = 1.5; // invisible box size
-const MOTION_DAMPING = 0.92; // velocity decay
-const MOTION_SENSITIVITY = 0.008; // how much acceleration affects velocity
-const BOUNCE_FACTOR = 0.6; // energy retained on bounce
-
-// Shake detection for party mode
-let shakeDetectionBuffer = [];
-const SHAKE_THRESHOLD = 30; // acceleration magnitude to trigger shake
-const SHAKE_WINDOW = 600; // ms to detect shake pattern
-let lastMotionTime = 0;
-const MOTION_THROTTLE = 50; // Only process motion every 50ms
-
-function requestMotionPermission() {
-  if (typeof DeviceMotionEvent !== 'undefined' &&
-      typeof DeviceMotionEvent.requestPermission === 'function') {
-    // iOS 13+ requires permission
-    DeviceMotionEvent.requestPermission()
-      .then((response) => {
-        if (response === 'granted') {
-          motionEnabled = true;
-          window.addEventListener('devicemotion', handleMotion);
-        }
-      })
-      .catch(console.error);
-  } else if ('DeviceMotionEvent' in window) {
-    // Non-iOS devices
-    motionEnabled = true;
-    window.addEventListener('devicemotion', handleMotion);
-  }
-}
-
-function handleMotion(event) {
-  if (!motionEnabled) return;
-
-  // Throttle motion events to reduce CPU load
-  const now = Date.now();
-  if (now - lastMotionTime < MOTION_THROTTLE) return;
-  lastMotionTime = now;
-
-  try {
-    const accel = event.accelerationIncludingGravity;
-    if (!accel) return;
-
-    // Get acceleration, skip invalid readings
-    const x = accel.x || 0;
-    const y = accel.y || 0;
-    const z = accel.z || 0;
-    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
-
-    motion.x = x;
-    motion.y = y;
-    motion.z = z;
-
-    // Detect shake gesture to toggle party mode
-    const magnitude = Math.sqrt(x * x + y * y + z * z);
-
-    // Only track high acceleration events
-    if (magnitude > SHAKE_THRESHOLD) {
-      shakeDetectionBuffer.push(now);
-    }
-
-    // Remove old entries (keep only timestamps)
-    shakeDetectionBuffer = shakeDetectionBuffer.filter(t => now - t < SHAKE_WINDOW);
-
-    // Check for shake pattern
-    if (shakeDetectionBuffer.length >= 4) {
-      shakeDetectionBuffer = [];
-      togglePartyMode();
-    }
-  } catch (e) {
-    // Silently ignore errors
-  }
-}
-
-// Old infinite grid shake removed - shake now toggles party mode
-
-function updateMotionPhysics() {
-  if (!motionEnabled || isGridMode) return;
-
-  // Apply acceleration to velocity
-  modelVelocity.x += motion.x * MOTION_SENSITIVITY;
-  modelVelocity.y -= motion.y * MOTION_SENSITIVITY; // invert Y for screen coords
-
-  // Apply damping
-  modelVelocity.x *= MOTION_DAMPING;
-  modelVelocity.y *= MOTION_DAMPING;
-
-  // Update position
-  modelOffset.x += modelVelocity.x;
-  modelOffset.y += modelVelocity.y;
-
-  // Bounce off invisible box walls
-  if (modelOffset.x > BOX_BOUNDS) {
-    modelOffset.x = BOX_BOUNDS;
-    modelVelocity.x = -modelVelocity.x * BOUNCE_FACTOR;
-  } else if (modelOffset.x < -BOX_BOUNDS) {
-    modelOffset.x = -BOX_BOUNDS;
-    modelVelocity.x = -modelVelocity.x * BOUNCE_FACTOR;
-  }
-
-  if (modelOffset.y > BOX_BOUNDS) {
-    modelOffset.y = BOX_BOUNDS;
-    modelVelocity.y = -modelVelocity.y * BOUNCE_FACTOR;
-  } else if (modelOffset.y < -BOX_BOUNDS) {
-    modelOffset.y = -BOX_BOUNDS;
-    modelVelocity.y = -modelVelocity.y * BOUNCE_FACTOR;
-  }
-}
-
 // Touch drag for solo mode rotation
 let touchDragging = false;
 let touchStartX = 0;
@@ -842,12 +370,6 @@ let lastMobileRotationTime = 0;
 const MOBILE_ROTATION_FRICTION = 0.95; // Velocity decay per frame
 const MOBILE_ROTATION_SENSITIVITY = 1.5; // How fast rotation responds to touch
 
-// Pinch to zoom
-let isPinching = false;
-let initialPinchDistance = 0;
-let currentZoom = 1; // 1 = default, < 1 = zoomed in, > 1 = zoomed out
-const MIN_ZOOM = 0.5; // Maximum zoom in (smaller frustum)
-const MAX_ZOOM = 2.0; // Maximum zoom out (larger frustum)
 const baseFrustumSize = 12; // Original frustum size
 
 function updateMousePosition(event) {
@@ -870,29 +392,8 @@ const TAP_THRESHOLD = 200; // ms - taps shorter than this trigger interaction
 const DOUBLE_TAP_THRESHOLD = 300; // ms - taps within this time are double tap
 const DRAG_THRESHOLD = 10; // pixels - movement beyond this is a drag
 
-function getPinchDistance(touches) {
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function updateCameraZoom() {
-  const zoomedFrustum = baseFrustumSize * currentZoom;
-  const aspect = window.innerWidth / window.innerHeight;
-  camera.left = zoomedFrustum * aspect / -2;
-  camera.right = zoomedFrustum * aspect / 2;
-  camera.top = zoomedFrustum / 2;
-  camera.bottom = zoomedFrustum / -2;
-  camera.updateProjectionMatrix();
-}
-
 function onTouchStart(event) {
-  if (event.touches.length === 2) {
-    // Pinch gesture start
-    isPinching = true;
-    initialPinchDistance = getPinchDistance(event.touches);
-    touchDragging = false;
-  } else if (event.touches.length === 1) {
+  if (event.touches.length === 1) {
     const touch = event.touches[0];
     mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
@@ -901,7 +402,6 @@ function onTouchStart(event) {
     touchStartY = touch.clientY;
     touchStartTime = Date.now();
     touchDragging = false;
-    isPinching = false;
 
     // Mobile scroll
     const config = getGridConfig();
@@ -919,25 +419,6 @@ let lastTouchTime = 0;
 
 function onTouchMove(event) {
   if (introActive) return;
-
-  // Handle pinch gesture (only in solo mode)
-  if (event.touches.length === 2 && isPinching && !isGridMode) {
-    event.preventDefault();
-    const currentDistance = getPinchDistance(event.touches);
-    const scale = initialPinchDistance / currentDistance;
-
-    // Update zoom (pinch in = smaller distance = zoom in = smaller frustum)
-    const newZoom = THREE.MathUtils.clamp(currentZoom * scale, MIN_ZOOM, MAX_ZOOM);
-
-    // Only update if changed significantly
-    if (Math.abs(newZoom - currentZoom) > 0.01) {
-      currentZoom = newZoom;
-      initialPinchDistance = currentDistance; // Reset for continuous pinch
-      updateCameraZoom();
-    }
-    return;
-  }
-
   if (event.touches.length !== 1) return;
 
   const touch = event.touches[0];
@@ -984,10 +465,8 @@ function onTouchMove(event) {
       // Convert screen pixels to scene units (larger divisor = slower scroll)
       const scrollAmount = scrollDelta / 80;
 
-      // Track scroll direction and hide header while scrolling
-      const newDirection = scrollDelta > 0 ? 1 : -1;
+      // Hide header while scrolling
       if (Math.abs(scrollDelta) > 10) {
-        lastMobileScrollDirection = newDirection;
         hideMobileHeader();
         if (mobileScrollShowTimer) clearTimeout(mobileScrollShowTimer);
       }
@@ -1025,15 +504,6 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
-  // Reset pinch state
-  if (isPinching) {
-    isPinching = false;
-    // Don't trigger tap/interaction after pinch
-    if (event.touches.length === 0) {
-      return;
-    }
-  }
-
   // Handle mobile scroll end - snap to nearest
   const config = getGridConfig();
   if (config.isMobileScroll && isMobileScrolling) {
@@ -1066,18 +536,15 @@ function onTouchEnd(event) {
 
   if (introActive) {
     exitIntro();
-    // Request gyro and motion permissions on first touch (required by iOS)
+    // Request gyro permission on first touch (required by iOS)
     if (isTouchDevice && !gyroPermissionGranted) {
       requestGyroPermission();
-    }
-    if (isTouchDevice && !motionEnabled) {
-      requestMotionPermission();
     }
     return;
   }
 
   const touchDuration = Date.now() - touchStartTime;
-  const wasTap = !touchDragging && !isPinching && touchDuration < TAP_THRESHOLD;
+  const wasTap = !touchDragging && touchDuration < TAP_THRESHOLD;
 
   // Reset drag state
   touchDragging = false;
@@ -1121,25 +588,22 @@ function handleInteraction() {
   if (isGridMode) {
     raycaster.setFromCamera(mouse, camera);
 
-    const gridObjects = gridModels
-      .map((entry) => entry.object)
+    const modelObjects = sceneModels
+      .map((entry) => entry?.object)
       .filter((object) => object && object.visible);
 
-    if (gridObjects.length > 0) {
-      const intersections = raycaster.intersectObjects(gridObjects, true);
+    if (modelObjects.length > 0) {
+      const intersections = raycaster.intersectObjects(modelObjects, true);
       if (intersections.length > 0) {
         let target = intersections[0].object;
-        while (target && !target.userData?.isGrid && target.parent) {
+        while (target && target.userData?.modelIndex === undefined && target.parent) {
           target = target.parent;
         }
 
-        if (target && target.userData?.isGrid) {
-          const targetIndex = target.userData.modelIndex;
-          if (typeof targetIndex === 'number') {
-            switchToModel(targetIndex);
-            toggleMode();
-            return;
-          }
+        if (target && typeof target.userData?.modelIndex === 'number') {
+          switchToModel(target.userData.modelIndex);
+          toggleMode();
+          return;
         }
       }
     }
@@ -1181,37 +645,36 @@ function switchToModel(index) {
   touchDragTargetX = 0;
   touchDragTargetY = 0;
 
-  // Reset motion physics when switching models
-  modelOffset.x = 0;
-  modelOffset.y = 0;
-  modelVelocity.x = 0;
-  modelVelocity.y = 0;
-
-  // Reset all model positions to their base when switching
-  const isPortrait = window.innerWidth / window.innerHeight < 1;
-  mainModels.forEach((model) => {
-    if (model.object) {
-      model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
-      model.object.position.y = isPortrait ? 0.5 : (model.object.userData.soloYPos || 0);
-    }
-  });
-
   if (!isGridMode) {
-    // Solo mode: Show/hide main models with random initial rotation
-    mainModels.forEach((model, i) => {
-      if (model.object) {
+    // Solo mode: Show only current model, scale up, center it
+    const isPortrait = window.innerWidth / window.innerHeight < 1;
+    sceneModels.forEach((model, i) => {
+      if (model && model.object) {
         const wasVisible = model.object.visible;
         model.object.visible = (i === index);
 
-        // Set random rotation when model becomes visible
-        if (!wasVisible && model.object.visible) {
+        if (i === index) {
+          // Scale up for solo mode first
           const innerObj = model.object.userData.innerObject;
-          if (innerObj) {
+          if (innerObj && model.object.userData.baseScale) {
+            const soloScaleVal = model.object.userData.baseScale * (SOLO_MODEL_SIZE / GRID_MODEL_SIZE);
+            innerObj.scale.setScalar(soloScaleVal);
+          }
+
+          // Position for solo mode - calculate center dynamically
+          model.object.position.set(0, 0, 0);
+          model.object.updateMatrixWorld(true);
+          const bbox = new THREE.Box3().setFromObject(model.object);
+          const center = new THREE.Vector3();
+          bbox.getCenter(center);
+          model.object.position.x = -center.x;
+          model.object.position.y = -center.y;
+
+          // Set random rotation when model becomes visible
+          if (!wasVisible && innerObj) {
             innerObj.rotation.x = (Math.random() - 0.5) * Math.PI * 0.8;
             innerObj.rotation.y = (Math.random() - 0.5) * Math.PI * 2;
             innerObj.rotation.z = (Math.random() - 0.5) * Math.PI * 0.3;
-
-            // Mark as transitioning to neutral
             model.object.userData.isTransitioning = true;
           }
         }
@@ -1227,53 +690,50 @@ function switchToModel(index) {
 function toggleMode() {
   isGridMode = !isGridMode;
 
+  const isPortrait = window.innerWidth / window.innerHeight < 1;
+  const config = getGridConfig();
+
   if (isGridMode) {
-    // GRID MODE
-    // Reset zoom to default when entering grid mode
-    if (currentZoom !== 1) {
-      currentZoom = 1;
-      updateCameraZoom();
-    }
+    // GRID MODE - show all models in grid positions, scale down
+    sceneModels.forEach((model, index) => {
+      if (model && model.object) {
+        model.object.visible = true;
 
-    // Hide solo mode elements
-    mainModels.forEach(model => {
-      if (model.object) model.object.visible = false;
-    });
-    thumbnailModels.forEach(thumb => {
-      if (thumb.object) thumb.object.visible = false;
-    });
+        // Position in grid
+        const pos = getGridPosition(index);
+        model.object.position.set(pos.x, pos.y, 0);
 
-    // Show grid mode elements
-    gridModels.forEach(model => {
-      if (model.object) model.object.visible = true;
+        // Scale down for grid mode
+        const innerObj = model.object.userData.innerObject;
+        if (innerObj && model.object.userData.baseScale) {
+          const gridScale = model.object.userData.baseScale * (config.modelSize / GRID_MODEL_SIZE);
+          innerObj.scale.setScalar(gridScale);
+        }
+      }
     });
   } else {
-    // SOLO MODE
-    // Hide grid mode elements
-    gridModels.forEach(model => {
-      if (model.object) model.object.visible = false;
-    });
-
-    // Hide thumbnails in solo mode
-    thumbnailModels.forEach(thumb => {
-      if (thumb.object) thumb.object.visible = false;
-    });
-
-    // Show main model centered (no gallery)
-    const isPortrait = window.innerWidth / window.innerHeight < 1;
-    // Reset motion physics when entering solo mode
-    modelOffset.x = 0;
-    modelOffset.y = 0;
-    modelVelocity.x = 0;
-    modelVelocity.y = 0;
-
-    mainModels.forEach((model, i) => {
-      if (model.object) {
+    // SOLO MODE - show only current model, scale up, center it
+    sceneModels.forEach((model, i) => {
+      if (model && model.object) {
         model.object.visible = (i === currentModelIndex);
-        // Center the object - on mobile center horizontally, on desktop use offset
-        // Reset ALL models to their base position
-        model.object.position.x = isPortrait ? 0 : (model.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
-        model.object.position.y = isPortrait ? 0.5 : (model.object.userData.soloYPos || 0);
+
+        if (i === currentModelIndex) {
+          // Scale up for solo mode first
+          const innerObj = model.object.userData.innerObject;
+          if (innerObj && model.object.userData.baseScale) {
+            const soloScaleVal = model.object.userData.baseScale * (SOLO_MODEL_SIZE / GRID_MODEL_SIZE);
+            innerObj.scale.setScalar(soloScaleVal);
+          }
+
+          // Position for solo mode - calculate center dynamically
+          model.object.position.set(0, 0, 0);
+          model.object.updateMatrixWorld(true);
+          const bbox = new THREE.Box3().setFromObject(model.object);
+          const center = new THREE.Vector3();
+          bbox.getCenter(center);
+          model.object.position.x = -center.x;
+          model.object.position.y = -center.y;
+        }
       }
     });
   }
@@ -1622,7 +1082,7 @@ function triggerGridIntroRandomization() {
   if (!gridIntroRandomizationPending || !isGridMode) return;
 
   let awaiting = false;
-  gridModels.forEach((entry) => {
+  sceneModels.forEach((entry) => {
     if (!entry || !entry.object) {
       awaiting = true;
       return;
@@ -1655,23 +1115,6 @@ function applyGridIntroRandomization(entry) {
   return true;
 }
 
-// Update thumbnail opacity
-function updateThumbnailHighlights() {
-  thumbnailModels.forEach((thumb, index) => {
-    if (thumb.object) {
-      const opacity = index === currentModelIndex ? 1.0 : 0.4;
-      thumb.object.traverse((child) => {
-        if (child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach(mat => {
-            mat.transparent = true;
-            mat.opacity = opacity;
-          });
-        }
-      });
-    }
-  });
-}
 
 window.addEventListener('mousemove', updateMousePosition);
 window.addEventListener('click', onClick);
@@ -1690,27 +1133,12 @@ if (introVideo) {
   introVideo.addEventListener('touchend', onTouchEnd);
 }
 
-// Keyboard navigation
+// Keyboard shortcuts
 window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
     event.preventDefault();
     showIntro();
     return;
-  }
-
-  if (introActive) return;
-  if (models.length === 0) return;
-  if (event.key === 'ArrowLeft') {
-    const newIndex = (currentModelIndex - 1 + models.length) % models.length;
-    switchToModel(newIndex);
-  } else if (event.key === 'ArrowRight') {
-    const newIndex = (currentModelIndex + 1) % models.length;
-    switchToModel(newIndex);
-  } else if (event.key === 'g' || event.key === 'G') {
-    toggleMode();
-  } else if (event.code === 'Space') {
-    event.preventDefault();
-    togglePartyMode();
   }
 });
 
@@ -1718,44 +1146,28 @@ window.addEventListener('keydown', (event) => {
 let modelsLoaded = 0;
 let totalAssetsToLoad = 0;
 let hasCompletedInitialLoad = false;
-const loadingScreen = document.getElementById('loading-screen');
-
-const loadingBar = document.getElementById('loading-bar');
 
 function checkLoadingComplete() {
   modelsLoaded++;
 
-  // Update loading bar progress
-  if (loadingBar && totalAssetsToLoad > 0) {
-    const progress = Math.min((modelsLoaded / totalAssetsToLoad) * 100, 100);
-    loadingBar.style.width = `${progress}%`;
-  }
-
   if (!hasCompletedInitialLoad && totalAssetsToLoad > 0 && modelsLoaded >= totalAssetsToLoad) {
     hasCompletedInitialLoad = true;
     prewarmGridModels();
-    setTimeout(() => {
-      loadingScreen.classList.add('hidden');
-      // Show intro prompt only after loading is complete
-      if (introPrompt && introActive) {
-        introPrompt.textContent = isTouchDevice ? 'TAP TO ENTER' : 'CLICK TO ENTER';
-        introPrompt.classList.add('visible');
-      }
-    }, 500);
+    // Show intro prompt only after loading is complete
+    if (introPrompt && introActive) {
+      introPrompt.textContent = isTouchDevice ? 'TAP TO ENTER' : 'CLICK TO ENTER';
+      introPrompt.classList.add('visible');
+    }
   }
 }
 
 function prewarmGridModels() {
   if (!renderer) return;
 
-  const mainVisibility = mainModels.map((model) => model.object ? model.object.visible : false);
-  const gridVisibility = gridModels.map((model) => model.object ? model.object.visible : false);
+  const visibility = sceneModels.map((model) => model?.object?.visible ?? false);
 
-  mainModels.forEach((model) => {
-    if (model.object) model.object.visible = false;
-  });
-  gridModels.forEach((model) => {
-    if (model.object) model.object.visible = true;
+  sceneModels.forEach((model) => {
+    if (model?.object) model.object.visible = true;
   });
 
   if (typeof renderer.compile === 'function') {
@@ -1763,24 +1175,13 @@ function prewarmGridModels() {
   }
   renderer.render(scene, camera);
 
-  gridModels.forEach((model, index) => {
-    if (model.object) model.object.visible = gridVisibility[index];
-  });
-  mainModels.forEach((model, index) => {
-    if (model.object) model.object.visible = mainVisibility[index];
+  sceneModels.forEach((model, index) => {
+    if (model?.object) model.object.visible = visibility[index];
   });
 }
 
 function showLoadingError(message) {
-  if (!loadingScreen) return;
-  loadingScreen.classList.remove('hidden');
-  let messageElement = loadingScreen.querySelector('.loading-error');
-  if (!messageElement) {
-    messageElement = document.createElement('p');
-    messageElement.classList.add('loading-error');
-    loadingScreen.appendChild(messageElement);
-  }
-  messageElement.textContent = message;
+  console.error('Loading error:', message);
 }
 
 // Helper to split file paths
@@ -1793,88 +1194,8 @@ function splitPath(path) {
   };
 }
 
-// Process loaded model
-function processModel(object3d, modelConfig, isMain, modelIndex) {
-  // Setup materials
-  object3d.traverse((child) => {
-    if (child.isMesh) {
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => {
-        if (!material) return;
-        material.flatShading = false;
-
-        const hasPBRMaps = material.map || material.normalMap || material.roughnessMap || material.metalnessMap || material.transmissionMap || material.clearcoatMap;
-        const usesTransmission = material.transmission !== undefined && material.transmission > 0;
-
-        if (!hasPBRMaps && !usesTransmission) {
-          if (material.roughness !== undefined) material.roughness *= 0.3;
-          if (material.metalness !== undefined) material.metalness = Math.max(material.metalness, 0.6);
-        }
-
-        material.needsUpdate = true;
-      });
-    }
-  });
-
-  // Center and scale
-  const initialBBox = new THREE.Box3().setFromObject(object3d);
-  const initialSize = new THREE.Vector3();
-  const initialCenter = new THREE.Vector3();
-  initialBBox.getSize(initialSize);
-  initialBBox.getCenter(initialCenter);
-
-  object3d.position.sub(initialCenter);
-
-  const maxDimension = Math.max(initialSize.x, initialSize.y, initialSize.z) || 1;
-  const desiredSize = isMain ? 4.725 : 0.8; // Solo figurines are now ~30% smaller
-  const computedScale = desiredSize / maxDimension;
-  const manualScale = typeof modelConfig.scale === 'number' ? modelConfig.scale : 1;
-  object3d.scale.multiplyScalar(computedScale * manualScale);
-
-  // Recalculate after scaling for perfect centering
-  object3d.updateMatrixWorld(true);
-  const scaledBBox = new THREE.Box3().setFromObject(object3d);
-  const scaledCenter = new THREE.Vector3();
-  scaledBBox.getCenter(scaledCenter);
-  object3d.position.sub(scaledCenter);
-
-  // Create group
-  const group = new THREE.Group();
-  group.add(object3d);
-
-  if (isMain) {
-    // Main model - starts in solo mode centered vertically
-    const soloXPos = SOLO_MODEL_X_OFFSET + (modelConfig.xOffset || 0);
-    const soloYPos = (modelConfig.yOffset || 0);
-    const galleryYPos = 1.0 + (modelConfig.yOffset || 0);
-    group.position.set(soloXPos, soloYPos, 0); // Start in solo position
-    group.visible = !isGridMode && (modelIndex === currentModelIndex);
-    group.userData.modelIndex = modelIndex;
-    group.userData.isMain = isMain;
-    group.userData.innerObject = object3d;
-    group.userData.soloXPos = soloXPos;
-    group.userData.soloYPos = soloYPos;
-    group.userData.galleryYPos = galleryYPos;
-    scene.add(group);
-    mainModels[modelIndex] = { object: group };
-    // Count main model loading completion
-    checkLoadingComplete();
-  } else {
-    // Thumbnail - bottom row, smaller spacing for smaller thumbs
-    const thumbSpacing = 1.5;
-    const totalWidth = (models.length - 1) * thumbSpacing;
-    const startX = -totalWidth / 2;
-    group.position.set(startX + (modelIndex * thumbSpacing), -5.5, 0);
-    group.userData.modelIndex = modelIndex;
-    group.userData.isMain = isMain;
-    group.userData.innerObject = object3d;
-    scene.add(group);
-    thumbnailModels[modelIndex] = { object: group };
-  }
-}
-
-// Process grid model (for 5x2 grid layout)
-function processGridModel(object3d, modelConfig, modelIndex) {
+// Process and add model to scene (unified - single model per config)
+function processSceneModel(object3d, modelConfig, modelIndex) {
   // Setup materials
   object3d.traverse((child) => {
     if (child.isMesh) {
@@ -1917,7 +1238,12 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   const scaledBBox = new THREE.Box3().setFromObject(object3d);
   const scaledCenter = new THREE.Vector3();
   scaledBBox.getCenter(scaledCenter);
-  object3d.position.sub(scaledCenter);
+  // Center horizontally (X,Z) but bottom-align vertically (Y)
+  // This ensures all models appear to sit at the same level in grid
+  object3d.position.x -= scaledCenter.x;
+  object3d.position.z -= scaledCenter.z;
+  object3d.position.y -= scaledBBox.min.y;
+
 
 
   const overrideDeg = GRID_ROTATION_OVERRIDE_DEG[modelConfig.id];
@@ -1931,25 +1257,30 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   const group = new THREE.Group();
   group.add(object3d);
 
-  // Responsive grid layout: 5x2 on desktop, 2x5 on mobile
+  // Store solo mode positions from config
+  const soloXPos = SOLO_MODEL_X_OFFSET + (modelConfig.xOffset || 0);
+  const soloYPos = (modelConfig.yOffset || 0);
+
+  // Position in grid by default
   const gridPosition = getGridPosition(modelIndex);
   group.position.set(gridPosition.x, gridPosition.y, 0);
-  group.visible = isGridMode; // Match current mode so intro toggles work even before load completes
+  group.visible = isGridMode;
   group.userData.modelIndex = modelIndex;
-  group.userData.isGrid = true;
   group.userData.innerObject = object3d;
   group.userData.baseRotationY = object3d.rotation.y;
   group.userData.baseRotationX = object3d.rotation.x;
-  group.userData.baseScale = object3d.scale.x; // Store for responsive rescaling
+  group.userData.baseScale = object3d.scale.x;
+  group.userData.soloXPos = soloXPos;
+  group.userData.soloYPos = soloYPos;
 
   scene.add(group);
-  gridModels[modelIndex] = { object: group };
+  sceneModels[modelIndex] = { object: group };
   triggerGridIntroRandomization();
   checkLoadingComplete();
 }
 
 // Load a single model
-function loadModel(modelConfig, modelIndex, isMain) {
+function loadModel(modelConfig, modelIndex) {
   if (modelConfig.glb) {
     const { basePath: glbBasePath, fileName: glbFileName } = splitPath(modelConfig.glb);
 
@@ -1966,13 +1297,7 @@ function loadModel(modelConfig, modelIndex, isMain) {
           console.error('GLB does not contain a scene:', modelConfig.glb);
           return;
         }
-        const mainClone = source.clone(true);
-        processModel(mainClone, modelConfig, isMain, modelIndex);
-
-        if (isMain) {
-          const gridClone = source.clone(true);
-          processGridModel(gridClone, modelConfig, modelIndex);
-        }
+        processSceneModel(source, modelConfig, modelIndex);
       },
       undefined,
       (error) => {
@@ -1998,13 +1323,7 @@ function loadModel(modelConfig, modelIndex, isMain) {
     objLoader.load(
       objBasePath ? objFileName : modelConfig.obj,
       (object) => {
-        const mainClone = object.clone(true);
-        processModel(mainClone, modelConfig, isMain, modelIndex);
-
-        if (isMain) {
-          const gridClone = object.clone(true);
-          processGridModel(gridClone, modelConfig, modelIndex);
-        }
+        processSceneModel(object, modelConfig, modelIndex);
       },
       undefined,
       (error) => {
@@ -2104,18 +1423,15 @@ async function init() {
   }
 
   modelsLoaded = 0;
-  totalAssetsToLoad = models.length * 2;
+  totalAssetsToLoad = models.length; // Only 10 models now (no cloning)
   hasCompletedInitialLoad = false;
-  mainModels.length = 0;
-  gridModels.length = 0;
-  thumbnailModels.length = 0;
+  sceneModels.length = 0;
 
   models.forEach((modelConfig, index) => {
-    loadModel(modelConfig, index, true);  // Main model + grid variant
+    loadModel(modelConfig, index);
   });
 
   switchToModel(0);
-  updateThumbnailHighlights();
   updateModeIcon();
   updateModelInfoDisplay();
   populateDropdown();
@@ -2124,12 +1440,11 @@ async function init() {
 
 init();
 
-// Request gyro/motion permissions early on touch devices
+// Request gyro permissions early on touch devices
 // iOS requires user gesture, but Android can request immediately
 if (isTouchDevice) {
   // Try requesting immediately (works on Android)
   requestGyroPermission();
-  requestMotionPermission();
 }
 
 // Text section - load and reveal
@@ -2270,14 +1585,22 @@ function populateModelList() {
   updateModelListActiveState();
 }
 
+// Model list state
+let modelListHovering = false;
+
+// Shared constants for model list styling
+const MODEL_LIST_ACTIVE_SIZE = 12; // px - same as 010 Totems
+const MODEL_LIST_ACTIVE_OPACITY = 0.6;
+const MODEL_LIST_MIN_SIZE = 7;
+const MODEL_LIST_MIN_OPACITY = 0.15;
+const GOLDEN_RATIO = 1.618;
+
 function updateModelListActiveState() {
   if (!modelListItems) return;
   const items = modelListItems.querySelectorAll('.model-list-item');
   const activeIndex = currentModelIndex;
-  const goldenRatio = 1.618;
-  const activeSize = 12; // px - same as 010 Totems
-  const activeOpacity = 0.6; // same as 010 Totems
-  const minSize = 7; // minimum readable size in px
+  // Use full golden ratio when not hovering
+  const ratio = GOLDEN_RATIO;
 
   items.forEach((item, index) => {
     const distance = Math.abs(index - activeIndex);
@@ -2285,23 +1608,59 @@ function updateModelListActiveState() {
 
     item.classList.toggle('active', isActive);
 
-    if (isActive) {
-      item.style.fontSize = `${activeSize}px`;
-      item.style.color = isDarkMode
-        ? `rgba(245, 247, 255, ${activeOpacity})`
-        : `rgba(8, 9, 13, ${activeOpacity})`;
-      item.style.opacity = '1';
-    } else {
-      // Progressive sizing using golden ratio
-      const size = Math.max(minSize, activeSize / Math.pow(goldenRatio, distance * 0.5));
-      const opacity = activeOpacity / Math.pow(goldenRatio, distance * 0.7);
+    // Progressive sizing: each step away divides by ratio
+    const size = Math.max(MODEL_LIST_MIN_SIZE, MODEL_LIST_ACTIVE_SIZE / Math.pow(ratio, distance * 0.5));
+    const opacity = Math.max(MODEL_LIST_MIN_OPACITY, MODEL_LIST_ACTIVE_OPACITY / Math.pow(ratio, distance * 0.6));
 
-      item.style.fontSize = `${size}px`;
-      item.style.color = isDarkMode
-        ? `rgba(245, 247, 255, ${opacity})`
-        : `rgba(8, 9, 13, ${opacity})`;
-      item.style.opacity = '1';
+    item.style.fontSize = `${size}px`;
+    item.style.color = `rgba(8, 9, 13, ${opacity})`;
+  });
+}
+
+function updateModelListHover(mouseY) {
+  if (!modelListItems) return;
+  const items = modelListItems.querySelectorAll('.model-list-item');
+
+  // Find which item is closest to mouse
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+
+  items.forEach((item, index) => {
+    const rect = item.getBoundingClientRect();
+    const itemCenterY = rect.top + rect.height / 2;
+    const dist = Math.abs(mouseY - itemCenterY);
+    if (dist < closestDistance) {
+      closestDistance = dist;
+      closestIndex = index;
     }
+  });
+
+  // Scale based on distance from hovered item (half golden ratio effect)
+  items.forEach((item, index) => {
+    const distance = Math.abs(index - closestIndex);
+
+    const size = Math.max(MODEL_LIST_MIN_SIZE, MODEL_LIST_ACTIVE_SIZE / Math.pow(GOLDEN_RATIO, distance * 0.25));
+    const opacity = Math.max(MODEL_LIST_MIN_OPACITY, MODEL_LIST_ACTIVE_OPACITY / Math.pow(GOLDEN_RATIO, distance * 0.3));
+
+    item.style.fontSize = `${size}px`;
+    item.style.color = `rgba(8, 9, 13, ${opacity})`;
+  });
+}
+
+// Setup model list hover listeners
+if (modelList) {
+  modelList.addEventListener('mouseenter', () => {
+    modelListHovering = true;
+  });
+
+  modelList.addEventListener('mousemove', (e) => {
+    if (!modelListHovering) return;
+    updateModelListHover(e.clientY);
+  });
+
+  modelList.addEventListener('mouseleave', () => {
+    modelListHovering = false;
+    updateModelListActiveState();
   });
 }
 
@@ -2463,9 +1822,47 @@ window.addEventListener('scroll', () => {
 
 loadTextContent();
 
+// Visibility handling - pause rendering when tab is hidden or models not in viewport
+let isPageVisible = true;
+let isSceneVisible = true;
+let animationFrameId = null;
+let lastFrameTime = 0;
+const THROTTLED_FRAME_INTERVAL = 100; // ms - when scene not visible, render at 10fps max
+
+document.addEventListener('visibilitychange', () => {
+  isPageVisible = !document.hidden;
+  if (isPageVisible && !animationFrameId) {
+    animationFrameId = requestAnimationFrame(animate);
+  }
+});
+
+// Check if scene container is in viewport
+function checkSceneVisibility() {
+  if (!container) return true;
+  const rect = container.getBoundingClientRect();
+  // Scene is visible if any part is in viewport
+  return rect.bottom > 0 && rect.top < window.innerHeight;
+}
+
 // Animation loop
 function animate() {
-  requestAnimationFrame(animate);
+  // Stop rendering if page is not visible
+  if (!isPageVisible) {
+    animationFrameId = null;
+    return;
+  }
+
+  animationFrameId = requestAnimationFrame(animate);
+
+  // Check if scene is visible and throttle if not
+  isSceneVisible = checkSceneVisibility();
+  if (!isSceneVisible) {
+    const now = performance.now();
+    if (now - lastFrameTime < THROTTLED_FRAME_INTERVAL) {
+      return; // Skip this frame
+    }
+    lastFrameTime = now;
+  }
 
   // Mobile scroll - smooth interpolation
   const config = getGridConfig();
@@ -2492,8 +1889,9 @@ function animate() {
   }
 
   if (isGridMode) {
-    // GRID MODE: Mouse-follow rotation for all grid models
-    gridModels.forEach((model, modelIndex) => {
+    // GRID MODE: Mouse-follow rotation for all models in grid
+    sceneModels.forEach((model, modelIndex) => {
+      if (!model) return;
       const group = model.object;
       if (!group || !group.visible) return;
       const innerObj = group.userData.innerObject;
@@ -2501,14 +1899,6 @@ function animate() {
 
       const baseRotationY = group.userData.baseRotationY || 0;
       const baseRotationX = group.userData.baseRotationX || 0;
-
-      // Debug mode: return to default rotation
-      if (lightingControlsVisible) {
-        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, baseRotationY, 0.1);
-        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX, 0.1);
-        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.1);
-        return;
-      }
 
       if (group.userData.gridIntroAnimating) {
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, baseRotationY, 0.08);
@@ -2583,21 +1973,12 @@ function animate() {
     });
   } else {
     // SOLO MODE: Model pinned at center, full rotation inspection via drag or gyro
-    const mainModel = mainModels[currentModelIndex];
-    if (mainModel && mainModel.object) {
-      const innerObj = mainModel.object.userData.innerObject;
+    const currentModel = sceneModels[currentModelIndex];
+    if (currentModel && currentModel.object) {
+      const innerObj = currentModel.object.userData.innerObject;
 
-      // Keep model centered (no position movement)
-      const isPortrait = window.innerWidth / window.innerHeight < 1;
-      mainModel.object.position.x = isPortrait ? 0 : (mainModel.object.userData.soloXPos ?? SOLO_MODEL_X_OFFSET);
-      mainModel.object.position.y = isPortrait ? 0.5 : (mainModel.object.userData.soloYPos || 0);
+      // Position is set when entering solo mode, no need to update every frame
 
-      // Debug mode: return to default rotation
-      if (lightingControlsVisible && innerObj) {
-        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, 0, 0.1);
-        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, 0, 0.1);
-        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.1);
-      } else {
       // Get input from touch drag, gyroscope, or mouse
       let targetRotationX, targetRotationY;
       const hasGyroInput = gyroEnabled && (Math.abs(gyro.gamma) > 0.01 || Math.abs(gyro.beta) > 0.01);
@@ -2610,10 +1991,10 @@ function animate() {
       } else if (hasGyroInput) {
         // Gyro control - amplified for full inspection
         targetRotationY = gyro.gamma * Math.PI * 0.5;
-        targetRotationX = gyro.beta * Math.PI * 0.4; // Mirrored: tilt forward = look up
+        targetRotationX = gyro.beta * Math.PI * 0.4;
       } else if (mouseIsMoving) {
         targetRotationY = mouse.x * Math.PI * SOLO_MOUSE_ROTATION_Y_FACTOR;
-        targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR; // Mouse up = look at top
+        targetRotationX = -mouse.y * Math.PI * SOLO_MOUSE_ROTATION_X_FACTOR;
       } else {
         targetRotationX = 0;
         targetRotationY = 0;
@@ -2622,7 +2003,7 @@ function animate() {
       const hasActiveInput = hasGyroInput || mouseIsMoving || hasTouchDragInput;
 
       // Check if transitioning from initial random rotation
-      if (mainModel.object.userData.isTransitioning && innerObj) {
+      if (currentModel.object.userData.isTransitioning && innerObj) {
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, SOLO_MODEL_TRANSITION_SPEED);
         innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, SOLO_MODEL_TRANSITION_SPEED);
@@ -2632,18 +2013,17 @@ function animate() {
           + Math.abs(innerObj.rotation.z);
         if (rotationDelta < SOLO_MODEL_TRANSITION_THRESHOLD) {
           innerObj.rotation.set(targetRotationX, targetRotationY, 0);
-          mainModel.object.userData.isTransitioning = false;
+          currentModel.object.userData.isTransitioning = false;
         }
       } else if (innerObj && hasActiveInput) {
         // Active input control (touch drag, gyro, or mouse)
         innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.12);
         innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.12);
-      } else if (innerObj && !mainModel.object.userData.isTransitioning) {
+      } else if (innerObj && !currentModel.object.userData.isTransitioning) {
         // Return to neutral when input stops
         innerObj.rotation.x *= 0.94;
         innerObj.rotation.y *= 0.94;
       }
-      } // end of else (not debug mode)
     }
   }
 
@@ -2656,11 +2036,10 @@ animate();
 // Handle resize
 window.addEventListener('resize', () => {
   const aspect = window.innerWidth / window.innerHeight;
-  const zoomedFrustum = baseFrustumSize * currentZoom;
-  camera.left = zoomedFrustum * aspect / -2;
-  camera.right = zoomedFrustum * aspect / 2;
-  camera.top = zoomedFrustum / 2;
-  camera.bottom = zoomedFrustum / -2;
+  camera.left = baseFrustumSize * aspect / -2;
+  camera.right = baseFrustumSize * aspect / 2;
+  camera.top = baseFrustumSize / 2;
+  camera.bottom = baseFrustumSize / -2;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 

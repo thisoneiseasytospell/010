@@ -15,11 +15,6 @@
     </script>
   </head>
   <body>
-    <div id="loading-screen">
-      <div id="loading-bar-container">
-        <div id="loading-bar"></div>
-      </div>
-    </div>
     <div id="intro-overlay">
       <video
         id="intro-video"
@@ -64,39 +59,6 @@
     <div id="model-list">
       <div id="model-list-items"></div>
       <a id="model-list-go-top" href="#">go to top</a>
-    </div>
-    <div id="lighting-controls" class="hidden">
-      <div class="control-group">
-        <label>Ambient</label>
-        <input type="range" id="ctrl-ambient" min="0" max="3" step="0.1" value="2.0">
-        <span id="val-ambient">2.0</span>
-      </div>
-      <div class="control-group">
-        <label>Key Light</label>
-        <input type="range" id="ctrl-key" min="0" max="5" step="0.1" value="1.5">
-        <span id="val-key">1.5</span>
-        <input type="color" id="ctrl-key-color" value="#9c9c9c">
-      </div>
-      <div class="control-group">
-        <label>Fill Light</label>
-        <input type="range" id="ctrl-fill" min="0" max="3" step="0.1" value="1.6">
-        <span id="val-fill">1.6</span>
-        <input type="color" id="ctrl-fill-color" value="#f0f4ff">
-      </div>
-      <div class="control-group">
-        <label>Rim Light</label>
-        <input type="range" id="ctrl-rim" min="0" max="3" step="0.1" value="0.3">
-        <span id="val-rim">0.3</span>
-        <input type="color" id="ctrl-rim-color" value="#ffffff">
-      </div>
-      <div class="control-group">
-        <label>Hemi Sky</label>
-        <input type="color" id="ctrl-hemi-sky" value="#ffffff">
-        <label>Ground</label>
-        <input type="color" id="ctrl-hemi-ground" value="#ffffff">
-      </div>
-      <button id="ctrl-copy">Copy Values</button>
-      <div class="control-hint">L: toggle controls</div>
     </div>
     <svg
       id="grid-mode-icon"
