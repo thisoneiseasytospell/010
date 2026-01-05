@@ -275,6 +275,189 @@ const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
 
+// Dark mode
+let isDarkMode = false;
+const lightModeBackground = 0xf5f5f0;
+const darkModeBackground = 0x0a0a0a;
+
+const lightModeValues = {
+  ambient: { color: 0xffffff, intensity: 2.0 },
+  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
+  key: { color: 0x9c9c9c, intensity: 1.5 },
+  fill: { color: 0xf0f4ff, intensity: 1.6 },
+  rim: { color: 0xffffff, intensity: 0.3 }
+};
+
+function flickerLights(callback) {
+  const flickerCount = 4;
+  const flickerDuration = 80;
+  let flickerIndex = 0;
+
+  const originalIntensities = {
+    ambient: ambient.intensity,
+    key: keyLight.intensity,
+    fill: fillLight.intensity,
+    rim: rimLight.intensity,
+    hemi: hemiLight.intensity
+  };
+
+  function flicker() {
+    if (flickerIndex >= flickerCount) {
+      if (callback) callback();
+      return;
+    }
+
+    const dimFactor = 0.1 + Math.random() * 0.3;
+    ambient.intensity = originalIntensities.ambient * dimFactor;
+    keyLight.intensity = originalIntensities.key * dimFactor;
+    fillLight.intensity = originalIntensities.fill * dimFactor;
+    rimLight.intensity = originalIntensities.rim * dimFactor;
+    hemiLight.intensity = originalIntensities.hemi * dimFactor;
+
+    setTimeout(() => {
+      ambient.intensity = originalIntensities.ambient * 0.7;
+      keyLight.intensity = originalIntensities.key * 0.7;
+      fillLight.intensity = originalIntensities.fill * 0.7;
+      rimLight.intensity = originalIntensities.rim * 0.7;
+      hemiLight.intensity = originalIntensities.hemi * 0.7;
+
+      flickerIndex++;
+      setTimeout(flicker, flickerDuration / 2);
+    }, flickerDuration);
+  }
+
+  flicker();
+}
+
+function applyLightingMode(values) {
+  ambient.color.setHex(values.ambient.color);
+  ambient.intensity = values.ambient.intensity;
+  hemiLight.color.setHex(values.hemi.sky);
+  hemiLight.groundColor.setHex(values.hemi.ground);
+  hemiLight.intensity = values.hemi.intensity;
+  keyLight.color.setHex(values.key.color);
+  keyLight.intensity = values.key.intensity;
+  fillLight.color.setHex(values.fill.color);
+  fillLight.intensity = values.fill.intensity;
+  rimLight.color.setHex(values.rim.color);
+  rimLight.intensity = values.rim.intensity;
+}
+
+// PARTY MODE 🎉
+let isPartyMode = false;
+let partyAnimationId = null;
+let partyStartTime = 0;
+let partyToggleCooldown = false;
+const partyColors = [
+  0xff0066, 0x00ff66, 0x6600ff, 0xff6600, 0x00ffff, 0xff00ff, 0xffff00
+];
+const policeRed = 0xff0022;
+const policeBlue = 0x0044ff;
+
+function startPartyMode() {
+  if (isPartyMode) return;
+  isPartyMode = true;
+  isDarkMode = true;
+  partyStartTime = Date.now();
+
+  document.body.classList.add('dark-mode', 'party-mode');
+  scene.background.setHex(darkModeBackground);
+
+  animateParty();
+}
+
+function stopPartyMode() {
+  isPartyMode = false;
+  document.body.classList.remove('party-mode');
+
+  if (partyAnimationId) {
+    cancelAnimationFrame(partyAnimationId);
+    partyAnimationId = null;
+  }
+}
+
+function togglePartyMode() {
+  if (partyToggleCooldown) return;
+  partyToggleCooldown = true;
+  setTimeout(() => { partyToggleCooldown = false; }, 1500);
+
+  flickerLights(() => {
+    if (isPartyMode) {
+      stopPartyMode();
+      isDarkMode = false;
+      document.body.classList.remove('dark-mode', 'party-mode');
+      scene.background.setHex(lightModeBackground);
+      applyLightingMode(lightModeValues);
+    } else {
+      isDarkMode = true;
+      document.body.classList.add('dark-mode');
+      scene.background.setHex(darkModeBackground);
+      startPartyMode();
+    }
+  });
+}
+
+function animateParty() {
+  if (!isPartyMode) return;
+
+  const time = (Date.now() - partyStartTime) / 1000;
+  const beat = Math.sin(time * 8) * 0.5 + 0.5;
+  const fastBeat = Math.sin(time * 16) * 0.5 + 0.5;
+
+  const policePhase = Math.floor(time * 6) % 2;
+  const policeFlash = Math.sin(time * 20) > 0;
+
+  const isExplosion = Math.random() > 0.97;
+  const explosionIntensity = isExplosion ? 8 + Math.random() * 5 : 0;
+
+  const colorIndex = Math.floor(time * 2) % partyColors.length;
+  const nextColorIndex = (colorIndex + 1) % partyColors.length;
+  const colorLerp = (time * 2) % 1;
+
+  const discoColor1 = new THREE.Color(partyColors[colorIndex]);
+  const discoColor2 = new THREE.Color(partyColors[nextColorIndex]);
+  discoColor1.lerp(discoColor2, colorLerp);
+
+  if (isExplosion) {
+    keyLight.color.setHex(0xffffff);
+    keyLight.intensity = explosionIntensity;
+  } else {
+    keyLight.color.copy(discoColor1);
+    keyLight.intensity = 1.5 + beat * 2;
+  }
+
+  if (policePhase === 0 && policeFlash) {
+    fillLight.color.setHex(policeRed);
+    fillLight.intensity = 3 + fastBeat * 2;
+  } else {
+    fillLight.color.setHex(partyColors[(colorIndex + 2) % partyColors.length]);
+    fillLight.intensity = 1 + fastBeat;
+  }
+
+  if (policePhase === 1 && policeFlash) {
+    rimLight.color.setHex(policeBlue);
+    rimLight.intensity = 3 + fastBeat * 2;
+  } else {
+    rimLight.color.setHex(partyColors[(colorIndex + 4) % partyColors.length]);
+    rimLight.intensity = 0.8 + beat * 1.5;
+  }
+
+  ambient.color.setHex(isExplosion ? 0xffffff : 0x222233);
+  ambient.intensity = isExplosion ? 2 : (0.15 + beat * 0.15);
+
+  if (policeFlash) {
+    hemiLight.color.setHex(policePhase === 0 ? policeRed : policeBlue);
+    hemiLight.groundColor.setHex(policePhase === 0 ? policeBlue : policeRed);
+    hemiLight.intensity = 0.5 + fastBeat * 0.5;
+  } else {
+    hemiLight.color.setHex(0x111122);
+    hemiLight.groundColor.setHex(0x000000);
+    hemiLight.intensity = 0.2;
+  }
+
+  partyAnimationId = requestAnimationFrame(animateParty);
+}
+
 // Mouse tracking
 const mouse = new THREE.Vector2();
 let mouseIsMoving = false;
@@ -1139,6 +1322,10 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     showIntro();
     return;
+  }
+  if (event.code === 'Space') {
+    event.preventDefault();
+    togglePartyMode();
   }
 });
 
