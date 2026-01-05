@@ -311,6 +311,38 @@ body.dark-mode #solo-go-top:hover {
   body.dark-mode .model-list-item:hover {
     color: rgba(245, 247, 255, 0.8) !important;
   }
+
+  /* Go to top link in model list */
+  #model-list-go-top {
+    display: none;
+    font-family: 'WTSkrappaTRIAL', 'Inter', sans-serif;
+    font-size: 12px;
+    color: rgba(8, 9, 13, 0.6);
+    text-decoration: none;
+    text-align: right;
+    transition: color 0.2s ease, opacity 0.3s ease;
+  }
+
+  #model-list-go-top:hover {
+    color: rgba(8, 9, 13, 0.9);
+  }
+
+  body.dark-mode #model-list-go-top {
+    color: rgba(245, 247, 255, 0.6);
+  }
+
+  body.dark-mode #model-list-go-top:hover {
+    color: rgba(245, 247, 255, 0.9);
+  }
+
+  /* When scrolled down, show go-to-top and hide model items */
+  #model-list.show-go-top #model-list-items {
+    display: none;
+  }
+
+  #model-list.show-go-top #model-list-go-top {
+    display: block;
+  }
 }
 
 @media (max-width: 900px) {

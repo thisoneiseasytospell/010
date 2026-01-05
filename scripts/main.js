@@ -2139,6 +2139,7 @@ const uiOverlay = document.getElementById('ui-overlay');
 const soloGoTop = document.getElementById('solo-go-top');
 const modelList = document.getElementById('model-list');
 const modelListItems = document.getElementById('model-list-items');
+const modelListGoTop = document.getElementById('model-list-go-top');
 
 // Set intro-active class initially to prevent scrolling
 document.body.classList.add('intro-active');
@@ -2243,6 +2244,15 @@ if (soloGoTop) {
   });
 }
 
+// Model list go to top (desktop sidebar)
+if (modelListGoTop) {
+  modelListGoTop.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
 // Populate model list (desktop sidebar)
 function populateModelList() {
   if (!modelListItems) return;
@@ -2315,6 +2325,23 @@ function updateModelListVisibility() {
   }
 }
 
+// Toggle model list between model picker and go-to-top based on scroll
+function updateModelListState() {
+  if (!modelList || isGridMode || introActive) {
+    modelList?.classList.remove('show-go-top');
+    return;
+  }
+
+  const sceneRect = container?.getBoundingClientRect();
+  const isModelVisible = sceneRect && sceneRect.bottom > 100;
+
+  if (isModelVisible) {
+    modelList.classList.remove('show-go-top');
+  } else {
+    modelList.classList.add('show-go-top');
+  }
+}
+
 // Show header when in solo mode or when scrolled to text section
 function updateHeaderVisibility() {
   const sceneBottom = container?.getBoundingClientRect().bottom || 0;
@@ -2351,6 +2378,7 @@ let lastPageScrollY = 0;
 window.addEventListener('scroll', () => {
   updateHeaderVisibility();
   updateSoloInfoState();
+  updateModelListState();
 
   // On mobile, detect scroll back to top from text section
   const config = getGridConfig();
