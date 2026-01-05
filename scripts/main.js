@@ -2134,7 +2134,6 @@ if (isTouchDevice) {
 
 // Text section - load and reveal
 const textContent = document.getElementById('text-content');
-const jumpToTop = document.getElementById('jump-to-top');
 const uiOverlay = document.getElementById('ui-overlay');
 const soloGoTop = document.getElementById('solo-go-top');
 const modelList = document.getElementById('model-list');
@@ -2228,14 +2227,6 @@ function processRevealQueue() {
   }, 60);
 }
 
-// Jump to top link
-if (jumpToTop) {
-  jumpToTop.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
-}
-
 // Solo mode go to top
 if (soloGoTop) {
   soloGoTop.addEventListener('click', (e) => {
@@ -2325,21 +2316,92 @@ function updateModelListVisibility() {
   }
 }
 
+// Track state for sequential animation
+let modelListBlurringOut = false;
+let modelListBlurringIn = false;
+let modelListShowingGoTop = false;
+
 // Toggle model list between model picker and go-to-top based on scroll
 function updateModelListState() {
-  if (!modelList || isGridMode || introActive) {
-    modelList?.classList.remove('show-go-top');
+  if (!modelList || !modelListItems || isGridMode || introActive) {
+    // Reset state when not in solo mode
+    if (modelListShowingGoTop) {
+      showModelListItems();
+    }
     return;
   }
 
   const sceneRect = container?.getBoundingClientRect();
   const isModelVisible = sceneRect && sceneRect.bottom > 100;
 
-  if (isModelVisible) {
-    modelList.classList.remove('show-go-top');
-  } else {
-    modelList.classList.add('show-go-top');
+  if (isModelVisible && modelListShowingGoTop) {
+    // Scroll back up - show model items
+    showModelListItems();
+  } else if (!isModelVisible && !modelListShowingGoTop) {
+    // Scroll down - blur out items sequentially
+    blurOutModelListItems();
   }
+}
+
+function blurOutModelListItems() {
+  if (modelListBlurringOut) return;
+  modelListBlurringOut = true;
+  modelListShowingGoTop = true;
+
+  const items = modelListItems.querySelectorAll('.model-list-item');
+  const activeIndex = currentModelIndex;
+
+  // Sort items by distance from active (furthest first)
+  const sortedItems = Array.from(items).map((item, index) => ({
+    item,
+    distance: Math.abs(index - activeIndex),
+    index
+  })).sort((a, b) => b.distance - a.distance);
+
+  // Blur out items sequentially (furthest from active first)
+  sortedItems.forEach((entry, i) => {
+    setTimeout(() => {
+      entry.item.classList.add('blurring-out');
+    }, i * 40);
+  });
+
+  // After all items blur out, show go-to-top
+  setTimeout(() => {
+    modelListGoTop?.classList.add('visible');
+    modelListBlurringOut = false;
+  }, sortedItems.length * 40 + 100);
+}
+
+function showModelListItems() {
+  if (modelListBlurringIn) return;
+  modelListBlurringIn = true;
+  modelListShowingGoTop = false;
+
+  // Hide go-to-top first
+  modelListGoTop?.classList.remove('visible');
+
+  const items = modelListItems.querySelectorAll('.model-list-item');
+  const activeIndex = currentModelIndex;
+
+  // Sort items by distance from active (closest first)
+  const sortedItems = Array.from(items).map((item, index) => ({
+    item,
+    distance: Math.abs(index - activeIndex),
+    index
+  })).sort((a, b) => a.distance - b.distance);
+
+  // Blur in items sequentially (closest to active first)
+  setTimeout(() => {
+    sortedItems.forEach((entry, i) => {
+      setTimeout(() => {
+        entry.item.classList.remove('blurring-out');
+      }, i * 40);
+    });
+
+    setTimeout(() => {
+      modelListBlurringIn = false;
+    }, sortedItems.length * 40);
+  }, 200);
 }
 
 // Show header when in solo mode or when scrolled to text section
