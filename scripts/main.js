@@ -123,8 +123,8 @@ function getGridPosition(modelIndex) {
   const row = Math.floor(modelIndex / cols);
 
   const x = (col * cellWidth) - (gridWidth / 2) + (cellWidth / 2);
-  const gridTop = gridHeight / 2;
-  const y = gridTop - (row + 1) * cellHeight;
+  // Center the grid vertically
+  const y = (rows / 2 - row - 0.5) * cellHeight;
 
   return { x, y };
 }
@@ -314,6 +314,9 @@ function toggleDarkMode() {
     if (lightingControlsVisible) {
       setupLightingControls();
     }
+
+    // Update model list colors
+    updateModelListActiveState();
   });
 }
 
@@ -1141,6 +1144,7 @@ function switchToModel(index) {
   }
 
   updateModelInfoDisplay();
+  updateModelListActiveState();
 }
 
 // Toggle between grid and solo mode
@@ -1200,6 +1204,8 @@ function toggleMode() {
 
   updateModeIcon();
   updateModelInfoDisplay();
+  updateHeaderVisibility();
+  updateModelListVisibility();
 }
 
 function updateModeIcon() {
@@ -1823,14 +1829,6 @@ function processGridModel(object3d, modelConfig, modelIndex) {
   scaledBBox.getCenter(scaledCenter);
   object3d.position.sub(scaledCenter);
 
-  // For desktop grid: align base so models rest on same baseline
-  // For mobile scroll: keep center-aligned for even visual spacing
-  if (!gridConfig.isMobileScroll) {
-    object3d.updateMatrixWorld(true);
-    const finalBBox = new THREE.Box3().setFromObject(object3d);
-    const minY = finalBBox.min.y;
-    object3d.position.y -= minY;
-  }
 
   const overrideDeg = GRID_ROTATION_OVERRIDE_DEG[modelConfig.id];
   const rotationDeg = typeof modelConfig.gridRotationDeg === 'number'
@@ -2037,6 +2035,7 @@ async function init() {
   updateModeIcon();
   updateModelInfoDisplay();
   populateDropdown();
+  populateModelList();
 }
 
 init();
@@ -2051,7 +2050,11 @@ if (isTouchDevice) {
 
 // Text section - load and reveal
 const textContent = document.getElementById('text-content');
-const goUpBtn = document.getElementById('go-up-btn');
+const jumpToTop = document.getElementById('jump-to-top');
+const uiOverlay = document.getElementById('ui-overlay');
+const soloGoTop = document.getElementById('solo-go-top');
+const modelList = document.getElementById('model-list');
+const modelListItems = document.getElementById('model-list-items');
 
 // Set intro-active class initially to prevent scrolling
 document.body.classList.add('intro-active');
@@ -2140,12 +2143,128 @@ function processRevealQueue() {
   }, 60);
 }
 
-// Go Up button
-if (goUpBtn) {
-  goUpBtn.addEventListener('click', () => {
+// Jump to top link
+if (jumpToTop) {
+  jumpToTop.addEventListener('click', (e) => {
+    e.preventDefault();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 }
+
+// Solo mode go to top
+if (soloGoTop) {
+  soloGoTop.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+// Populate model list (desktop sidebar)
+function populateModelList() {
+  if (!modelListItems) return;
+  modelListItems.innerHTML = '';
+
+  models.forEach((model, index) => {
+    const info = modelInfoById.get(model.id);
+    const name = (info && info.heading) ? info.heading : (model.title || `Model ${index + 1}`);
+
+    const item = document.createElement('div');
+    item.className = 'model-list-item';
+    item.textContent = name;
+    item.dataset.index = index;
+
+    item.addEventListener('click', () => {
+      switchToModel(index);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    modelListItems.appendChild(item);
+  });
+
+  updateModelListActiveState();
+}
+
+function updateModelListActiveState() {
+  if (!modelListItems) return;
+  const items = modelListItems.querySelectorAll('.model-list-item');
+  const activeIndex = currentModelIndex;
+  const goldenRatio = 1.618;
+  const activeSize = 12; // px - same as 010 Totems
+  const activeOpacity = 0.6; // same as 010 Totems
+  const minSize = 7; // minimum readable size in px
+
+  items.forEach((item, index) => {
+    const distance = Math.abs(index - activeIndex);
+    const isActive = index === activeIndex;
+
+    item.classList.toggle('active', isActive);
+
+    if (isActive) {
+      item.style.fontSize = `${activeSize}px`;
+      item.style.color = isDarkMode
+        ? `rgba(245, 247, 255, ${activeOpacity})`
+        : `rgba(8, 9, 13, ${activeOpacity})`;
+      item.style.opacity = '1';
+    } else {
+      // Progressive sizing using golden ratio
+      const size = Math.max(minSize, activeSize / Math.pow(goldenRatio, distance * 0.5));
+      const opacity = activeOpacity / Math.pow(goldenRatio, distance * 0.7);
+
+      item.style.fontSize = `${size}px`;
+      item.style.color = isDarkMode
+        ? `rgba(245, 247, 255, ${opacity})`
+        : `rgba(8, 9, 13, ${opacity})`;
+      item.style.opacity = '1';
+    }
+  });
+}
+
+function updateModelListVisibility() {
+  if (!modelList) return;
+  // Show in solo mode on desktop
+  const isDesktop = window.innerWidth > 900;
+  if (!isGridMode && !introActive && isDesktop) {
+    modelList.classList.add('visible');
+  } else {
+    modelList.classList.remove('visible');
+  }
+}
+
+// Show header when in solo mode or when scrolled to text section
+function updateHeaderVisibility() {
+  const sceneBottom = container?.getBoundingClientRect().bottom || 0;
+  const isScrolledPastScene = sceneBottom < window.innerHeight * 0.5;
+
+  if ((!isGridMode && !introActive) || (isScrolledPastScene && !introActive)) {
+    uiOverlay?.classList.add('visible');
+  } else {
+    uiOverlay?.classList.remove('visible');
+  }
+}
+
+// Toggle model name / go to top based on model visibility
+function updateSoloInfoState() {
+  if (isGridMode || introActive) {
+    soloInfoPanel?.classList.remove('show-go-top');
+    return;
+  }
+
+  const sceneRect = container?.getBoundingClientRect();
+  const isModelVisible = sceneRect && sceneRect.bottom > 100;
+
+  if (isModelVisible) {
+    soloInfoPanel?.classList.remove('show-go-top');
+  } else {
+    soloInfoPanel?.classList.add('show-go-top');
+  }
+}
+
+// Scroll listener for header and solo info state
+window.addEventListener('scroll', () => {
+  updateHeaderVisibility();
+  updateSoloInfoState();
+});
+
 
 loadTextContent();
 

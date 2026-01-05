@@ -34,12 +34,11 @@
     <div id="scene-container"></div>
     <div id="ui-overlay">
       <h1>010 Totems</h1>
-      <p id="mode-indicator">C&S WdKA 2025 Albert Kozikowski</p>
     </div>
     <!-- Mobile header with left title, right model selector -->
     <div id="mobile-header">
       <div id="mobile-header-left">
-        <h1>010 Totems</h1>
+        <h1>010<br>Totems</h1>
       </div>
       <div id="mobile-header-right">
         <button id="model-selector-btn">
@@ -58,8 +57,12 @@
     <div id="solo-info-panel" aria-live="polite">
       <div class="solo-info-inner">
         <h2 id="solo-info-title"></h2>
+        <a id="solo-go-top" href="#">go to top</a>
         <div id="solo-info-body"></div>
       </div>
+    </div>
+    <div id="model-list">
+      <div id="model-list-items"></div>
     </div>
     <div id="lighting-controls" class="hidden">
       <div class="control-group">
@@ -113,7 +116,8 @@
     </svg>
     <section id="text-section">
       <div id="text-content"></div>
-      <button id="go-up-btn">Go Up</button>
+      <p id="page-footer">C&S WdKA 2026 Albert Kozikowski</p>
+      <a id="jump-to-top" href="#">jump to the top</a>
     </section>
     <script type="module" src="./scripts/main.js"></script>
   </body>
