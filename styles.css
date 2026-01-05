@@ -339,13 +339,17 @@ body.dark-mode #solo-go-top:hover {
     bottom: 0;
     z-index: 150;
     pointer-events: none;
+    transition: transform 0.3s ease;
+  }
+
+  #mobile-header.hidden {
+    transform: translateY(100%);
   }
 
   #mobile-header-left {
     position: absolute;
-    top: 50%;
+    bottom: 2rem;
     left: 1rem;
-    transform: translateY(-50%);
     pointer-events: auto;
   }
 
@@ -365,9 +369,8 @@ body.dark-mode #solo-go-top:hover {
 
   #mobile-header-right {
     position: absolute;
-    top: 50%;
+    bottom: 2rem;
     right: 1rem;
-    transform: translateY(-50%);
     pointer-events: auto;
     max-width: 50%;
   }
@@ -413,7 +416,7 @@ body.dark-mode #solo-go-top:hover {
 #model-dropdown {
   display: none;
   position: fixed;
-  top: 3.5rem;
+  bottom: 4.5rem;
   right: 1rem;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 8px;

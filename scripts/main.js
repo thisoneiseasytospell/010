@@ -107,11 +107,10 @@ function getGridPosition(modelIndex) {
   const { cols, cellWidth, cellHeight, isMobileScroll } = config;
 
   if (isMobileScroll) {
-    // Mobile: single column, vertically stacked
-    // Models are center-aligned, negative offset pushes down
+    // Mobile: single column, vertically stacked, centered at camera y position
     return {
       x: 0,
-      y: -modelIndex * cellHeight - 1.0 // Push down more for top padding
+      y: -modelIndex * cellHeight
     };
   }
 
@@ -156,12 +155,35 @@ let mobileTouchStartY = 0;
 let mobileTouchStartScroll = 0;
 let mobileCurrentModelIndex = 0;
 let isMobileScrolling = false;
+let mobileHeaderVisible = true;
+let lastMobileScrollDirection = 0; // -1 = up, 1 = down
+let mobileScrollShowTimer = null;
 
 function getMobileScrollBounds() {
   const config = getGridConfig();
   if (!config.isMobileScroll) return { min: 0, max: 0 };
-  const totalHeight = (models.length - 1) * config.cellHeight;
+  // Add extra position for Info at the end
+  const totalHeight = models.length * config.cellHeight;
   return { min: 0, max: totalHeight };
+}
+
+function showMobileHeader() {
+  if (!mobileHeader || mobileHeaderVisible) return;
+  mobileHeaderVisible = true;
+  mobileHeader.classList.remove('hidden');
+}
+
+function hideMobileHeader() {
+  if (!mobileHeader || !mobileHeaderVisible) return;
+  mobileHeaderVisible = false;
+  mobileHeader.classList.add('hidden');
+}
+
+function scheduleMobileHeaderShow() {
+  if (mobileScrollShowTimer) clearTimeout(mobileScrollShowTimer);
+  mobileScrollShowTimer = setTimeout(() => {
+    showMobileHeader();
+  }, 150);
 }
 
 function snapToNearestModel() {
@@ -170,9 +192,20 @@ function snapToNearestModel() {
 
   const cellHeight = config.cellHeight;
   const nearestIndex = Math.round(mobileScrollTarget / cellHeight);
-  const clampedIndex = Math.max(0, Math.min(nearestIndex, models.length - 1));
+  // Allow scrolling to Info position (models.length) as last item
+  const clampedIndex = Math.max(0, Math.min(nearestIndex, models.length));
   mobileScrollTarget = clampedIndex * cellHeight;
   mobileCurrentModelIndex = clampedIndex;
+
+  // If at Info position (past last model), scroll page to text section
+  if (clampedIndex >= models.length) {
+    const textSection = document.getElementById('text-section');
+    if (textSection) {
+      setTimeout(() => {
+        textSection.scrollIntoView({ behavior: 'smooth' });
+      }, 200);
+    }
+  }
 }
 
 // Scene setup
@@ -201,6 +234,38 @@ container.appendChild(renderer.domElement);
 
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/');
+
+// Reusable loaders (created once for performance)
+const gltfLoader = new GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
+const objLoader = new OBJLoader();
+const mtlLoader = new MTLLoader();
+
+// Cleanup on page unload to prevent memory leaks
+window.addEventListener('beforeunload', () => {
+  // Dispose renderer
+  renderer.dispose();
+
+  // Dispose all geometries and materials in scene
+  scene.traverse((object) => {
+    if (object.geometry) {
+      object.geometry.dispose();
+    }
+    if (object.material) {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => {
+        if (material.map) material.map.dispose();
+        if (material.normalMap) material.normalMap.dispose();
+        if (material.roughnessMap) material.roughnessMap.dispose();
+        if (material.metalnessMap) material.metalnessMap.dispose();
+        material.dispose();
+      });
+    }
+  });
+
+  // Dispose DRACO decoder
+  dracoLoader.dispose();
+});
 
 // Lighting - Studio setup
 const ambient = new THREE.AmbientLight(0xffffff, 2.0);
@@ -919,6 +984,14 @@ function onTouchMove(event) {
       // Convert screen pixels to scene units (larger divisor = slower scroll)
       const scrollAmount = scrollDelta / 80;
 
+      // Track scroll direction and hide header while scrolling
+      const newDirection = scrollDelta > 0 ? 1 : -1;
+      if (Math.abs(scrollDelta) > 10) {
+        lastMobileScrollDirection = newDirection;
+        hideMobileHeader();
+        if (mobileScrollShowTimer) clearTimeout(mobileScrollShowTimer);
+      }
+
       const bounds = getMobileScrollBounds();
       mobileScrollTarget = THREE.MathUtils.clamp(
         mobileTouchStartScroll + scrollAmount,
@@ -985,6 +1058,9 @@ function onTouchEnd(event) {
 
       // Snap to nearest model
       snapToNearestModel();
+
+      // Show header after scroll settles
+      scheduleMobileHeaderShow();
     }
   }
 
@@ -1226,11 +1302,25 @@ function updateModelInfoDisplay() {
     ? mobileCurrentModelIndex
     : currentModelIndex;
 
+  // Check if we're at the Info position (past last model)
+  const isAtInfoPosition = config.isMobileScroll && isGridMode && displayIndex >= models.length;
+
   const currentModel = models[displayIndex];
   const info = currentModel ? modelInfoById.get(currentModel.id) : null;
 
   // Remove description body
   if (soloInfoBody) soloInfoBody.innerHTML = '';
+
+  if (isAtInfoPosition) {
+    // Show "Info" when scrolled past last model
+    soloInfoTitle.textContent = 'Info';
+    if (currentModelNameEl) {
+      currentModelNameEl.textContent = 'Info';
+    }
+    soloInfoPanel.classList.add('visible');
+    updateDropdownActiveState(-1); // No model active
+    return;
+  }
 
   if (!currentModel) {
     soloInfoTitle.textContent = '';
@@ -1861,10 +1951,6 @@ function processGridModel(object3d, modelConfig, modelIndex) {
 // Load a single model
 function loadModel(modelConfig, modelIndex, isMain) {
   if (modelConfig.glb) {
-    const gltfLoader = new GLTFLoader();
-    if (dracoLoader) {
-      gltfLoader.setDRACOLoader(dracoLoader);
-    }
     const { basePath: glbBasePath, fileName: glbFileName } = splitPath(modelConfig.glb);
 
     if (glbBasePath) {
@@ -1901,7 +1987,6 @@ function loadModel(modelConfig, modelIndex, isMain) {
     return;
   }
 
-  const objLoader = new OBJLoader();
   const { basePath: objBasePath, fileName: objFileName } = splitPath(modelConfig.obj);
 
   if (objBasePath) {
@@ -1930,7 +2015,6 @@ function loadModel(modelConfig, modelIndex, isMain) {
 
   if (modelConfig.mtl) {
     const { basePath: mtlBasePath, fileName: mtlFileName } = splitPath(modelConfig.mtl);
-    const mtlLoader = new MTLLoader();
 
     if (mtlBasePath) {
       mtlLoader.setPath(mtlBasePath);
@@ -2173,7 +2257,8 @@ function populateModelList() {
     item.textContent = name;
     item.dataset.index = index;
 
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
       switchToModel(index);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -2259,10 +2344,30 @@ function updateSoloInfoState() {
   }
 }
 
+// Track page scroll for mobile back-from-info navigation
+let lastPageScrollY = 0;
+
 // Scroll listener for header and solo info state
 window.addEventListener('scroll', () => {
   updateHeaderVisibility();
   updateSoloInfoState();
+
+  // On mobile, detect scroll back to top from text section
+  const config = getGridConfig();
+  if (config.isMobileScroll && isGridMode) {
+    const currentScroll = window.scrollY;
+    const sceneHeight = window.innerHeight;
+
+    // If scrolling up while in text section area, check if we should go back to models
+    if (currentScroll < sceneHeight * 0.3 && lastPageScrollY > currentScroll && mobileCurrentModelIndex >= models.length) {
+      // User scrolled back up - reset to last model
+      mobileScrollTarget = (models.length - 1) * config.cellHeight;
+      mobileCurrentModelIndex = models.length - 1;
+      updateModelInfoDisplay();
+    }
+
+    lastPageScrollY = currentScroll;
+  }
 });
 
 
