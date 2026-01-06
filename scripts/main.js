@@ -69,12 +69,12 @@ function getGridConfig() {
 
   if (isPortrait) {
     // Mobile portrait: 1 column, vertical scroll
-    // cellHeight controls spacing - smaller = closer together
+    // cellHeight controls spacing - larger = more space between models
     return {
       cols: 1,
       rows: 10, // All models in one column
       cellWidth: 0, // Not used for single column
-      cellHeight: 5.0, // Closer spacing between models
+      cellHeight: 7.0, // Spacing between models
       modelSize: 3.0, // Model size
       isMobileScroll: true
     };
@@ -588,8 +588,8 @@ function handleGyro(event) {
     // When beta is close to ±90, gamma becomes unreliable
     const isNearUpright = Math.abs(Math.abs(beta) - 90) < 10;
 
-    // Comfortable holding angle: 50-60 degrees from horizontal
-    const comfortableBeta = 55;
+    // Comfortable holding angle: phone held in palm ~30 degrees from horizontal
+    const comfortableBeta = 30;
     let normalizedBeta = THREE.MathUtils.clamp((beta - comfortableBeta) / 45, -1, 1);
 
     // Map gamma -45 to 45 to -1 to 1 for horizontal tilt (left/right)
