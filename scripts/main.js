@@ -818,7 +818,7 @@ function onTouchEnd(event) {
     // On mobile scroll, tap on model goes to solo mode
     if (config.isMobileScroll && isGridMode) {
       currentModelIndex = mobileCurrentModelIndex;
-      switchToModel(currentModelIndex);
+      toggleMode(); // Enter solo mode
       return;
     }
 
@@ -958,6 +958,9 @@ function toggleMode() {
     });
   } else {
     // SOLO MODE - show only current model
+    // Reset camera to origin (important for mobile where camera follows scroll)
+    camera.position.y = 0;
+
     sceneModels.forEach((model, i) => {
       if (model && model.object) {
         model.object.visible = (i === currentModelIndex);
