@@ -3,7 +3,6 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
 const container = document.querySelector('#scene-container');
 const introOverlay = document.getElementById('intro-overlay');
@@ -218,22 +217,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.6;
 container.appendChild(renderer.domElement);
-
-// HDR Environment for realistic reflections
-const pmremGenerator = new THREE.PMREMGenerator(renderer);
-pmremGenerator.compileEquirectangularShader();
-let hdrEnvMap = null;
-
-new RGBELoader()
-  .load('./assets/studio.hdr', (hdrTexture) => {
-    hdrEnvMap = pmremGenerator.fromEquirectangular(hdrTexture).texture;
-    scene.environment = hdrEnvMap;
-    hdrTexture.dispose();
-    pmremGenerator.dispose();
-  });
 
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.166.0/examples/jsm/libs/draco/');
@@ -270,23 +254,22 @@ window.addEventListener('beforeunload', () => {
   dracoLoader.dispose();
 });
 
-// Lighting - Studio setup
-// Reduced light intensities - HDR provides main lighting
-const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+// Lighting - Studio setup (weather-reactive)
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.1);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.4);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0x9c9c9c, 0.4);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
 keyLight.position.set(8, 10, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.3);
+const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.8);
 fillLight.position.set(-6, 5, 5);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
 
@@ -295,16 +278,16 @@ let isDarkMode = false;
 const lightModeBackground = 0xf5f5f0;
 const darkModeBackground = 0x0a0a0a;
 
-// Light mode: reduced for HDR
-const lightModeValues = {
-  ambient: { color: 0xffffff, intensity: 0.3 },
-  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.1 },
-  key: { color: 0x9c9c9c, intensity: 0.4 },
-  fill: { color: 0xf0f4ff, intensity: 0.3 },
-  rim: { color: 0xffffff, intensity: 0.2 }
+// Base light values (sunny day)
+const baseLightValues = {
+  ambient: { color: 0xffffff, intensity: 0.6 },
+  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
+  key: { color: 0xffffff, intensity: 1.2 },
+  fill: { color: 0xf0f4ff, intensity: 0.8 },
+  rim: { color: 0xffffff, intensity: 0.5 }
 };
 
-// Disco mode: full intensity, no HDR
+// Disco mode values
 const discoModeValues = {
   ambient: { color: 0xffffff, intensity: 2.0 },
   hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
@@ -312,6 +295,208 @@ const discoModeValues = {
   fill: { color: 0xf0f4ff, intensity: 1.6 },
   rim: { color: 0xffffff, intensity: 0.3 }
 };
+
+// Weather state
+let currentWeather = {
+  condition: 'clear', // clear, clouds, rain, snow, fog
+  windSpeed: 0, // m/s
+  temperature: 15, // celsius
+  cloudCover: 0, // 0-100
+  isDay: true
+};
+
+// Rain particle system
+let rainParticles = null;
+let rainGeometry = null;
+const RAIN_COUNT = 2000;
+const rainVelocities = [];
+
+function createRainParticles() {
+  rainGeometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(RAIN_COUNT * 3);
+
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 30;     // x
+    positions[i * 3 + 1] = Math.random() * 20 - 5;     // y
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 10; // z
+    rainVelocities.push(0.1 + Math.random() * 0.2);    // fall speed
+  }
+
+  rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const rainMaterial = new THREE.PointsMaterial({
+    color: 0x8899aa,
+    size: 0.05,
+    transparent: true,
+    opacity: 0.6
+  });
+
+  rainParticles = new THREE.Points(rainGeometry, rainMaterial);
+  rainParticles.visible = false;
+  scene.add(rainParticles);
+}
+
+function updateRain(windSpeed) {
+  if (!rainParticles || !rainParticles.visible) return;
+
+  const positions = rainGeometry.attributes.position.array;
+  const windOffset = windSpeed * 0.02;
+
+  for (let i = 0; i < RAIN_COUNT; i++) {
+    // Fall down
+    positions[i * 3 + 1] -= rainVelocities[i];
+    // Wind pushes sideways
+    positions[i * 3] += windOffset;
+
+    // Reset when below view
+    if (positions[i * 3 + 1] < -10) {
+      positions[i * 3 + 1] = 15;
+      positions[i * 3] = (Math.random() - 0.5) * 30;
+    }
+    // Wrap around if blown too far
+    if (positions[i * 3] > 15) positions[i * 3] = -15;
+    if (positions[i * 3] < -15) positions[i * 3] = 15;
+  }
+
+  rainGeometry.attributes.position.needsUpdate = true;
+}
+
+function setRainVisible(visible) {
+  if (rainParticles) {
+    rainParticles.visible = visible;
+  }
+}
+
+// Wind wiggle effect
+let windTime = 0;
+function applyWindWiggle(windSpeed) {
+  if (isPartyMode) return; // Don't wiggle in party mode
+
+  windTime += 0.016; // ~60fps
+  const wiggleStrength = Math.min(windSpeed / 20, 1) * 0.05; // Max wiggle at 20 m/s
+
+  sceneModels.forEach((model, index) => {
+    if (!model || !model.object) return;
+    const innerObj = model.object.userData.innerObject;
+    if (!innerObj) return;
+
+    // Each model wiggles slightly differently
+    const offset = index * 0.5;
+    const wiggle = Math.sin(windTime * 2 + offset) * wiggleStrength;
+
+    // Store original rotation if not stored
+    if (model.object.userData.windWiggleBase === undefined) {
+      model.object.userData.windWiggleBase = innerObj.rotation.z;
+    }
+
+    // Only apply in grid mode, not during transitions
+    if (isGridMode && !model.object.userData.gridIntroAnimating) {
+      innerObj.rotation.z = model.object.userData.windWiggleBase + wiggle;
+    }
+  });
+}
+
+// Weather-based lighting
+function applyWeatherLighting() {
+  if (isDarkMode || isPartyMode) return;
+
+  const { condition, cloudCover, isDay } = currentWeather;
+
+  // Base multiplier based on time of day
+  let dayMultiplier = isDay ? 1.0 : 0.3;
+
+  // Cloud cover dims the light
+  let cloudMultiplier = 1.0 - (cloudCover / 100) * 0.5;
+
+  // Condition-specific adjustments
+  let conditionColor = 0xffffff;
+  let conditionMultiplier = 1.0;
+
+  switch (condition) {
+    case 'rain':
+      conditionColor = 0xaabbcc; // Bluish tint
+      conditionMultiplier = 0.6;
+      break;
+    case 'clouds':
+      conditionColor = 0xdddddd;
+      conditionMultiplier = 0.8;
+      break;
+    case 'fog':
+      conditionColor = 0xcccccc;
+      conditionMultiplier = 0.5;
+      break;
+    case 'snow':
+      conditionColor = 0xeeeeff;
+      conditionMultiplier = 0.7;
+      break;
+    case 'clear':
+    default:
+      conditionColor = 0xffffff;
+      conditionMultiplier = 1.0;
+  }
+
+  const finalMultiplier = dayMultiplier * cloudMultiplier * conditionMultiplier;
+
+  ambient.intensity = baseLightValues.ambient.intensity * finalMultiplier;
+  hemiLight.intensity = baseLightValues.hemi.intensity * finalMultiplier;
+  keyLight.intensity = baseLightValues.key.intensity * finalMultiplier;
+  keyLight.color.setHex(conditionColor);
+  fillLight.intensity = baseLightValues.fill.intensity * finalMultiplier;
+  rimLight.intensity = baseLightValues.rim.intensity * finalMultiplier;
+}
+
+// Fetch Rotterdam weather from Open-Meteo (free, no API key)
+async function fetchRotterdamWeather() {
+  try {
+    // Rotterdam coordinates: 51.9225, 4.47917
+    const response = await fetch(
+      'https://api.open-meteo.com/v1/forecast?latitude=51.9225&longitude=4.47917&current=temperature_2m,weather_code,wind_speed_10m,cloud_cover,is_day'
+    );
+
+    if (!response.ok) throw new Error('Weather fetch failed');
+
+    const data = await response.json();
+    const current = data.current;
+
+    // Map WMO weather codes to conditions
+    // https://open-meteo.com/en/docs#weathervariables
+    const weatherCode = current.weather_code;
+    let condition = 'clear';
+
+    if (weatherCode === 0) condition = 'clear';
+    else if (weatherCode <= 3) condition = 'clouds';
+    else if (weatherCode >= 45 && weatherCode <= 48) condition = 'fog';
+    else if (weatherCode >= 51 && weatherCode <= 67) condition = 'rain';
+    else if (weatherCode >= 71 && weatherCode <= 77) condition = 'snow';
+    else if (weatherCode >= 80 && weatherCode <= 82) condition = 'rain';
+    else if (weatherCode >= 85 && weatherCode <= 86) condition = 'snow';
+    else if (weatherCode >= 95) condition = 'rain'; // thunderstorm
+
+    currentWeather = {
+      condition,
+      windSpeed: current.wind_speed_10m || 0,
+      temperature: current.temperature_2m || 15,
+      cloudCover: current.cloud_cover || 0,
+      isDay: current.is_day === 1
+    };
+
+    console.log('Rotterdam weather:', currentWeather);
+
+    // Apply weather effects
+    applyWeatherLighting();
+    setRainVisible(condition === 'rain' || condition === 'snow');
+
+  } catch (error) {
+    console.warn('Could not fetch weather:', error);
+    // Use defaults
+  }
+}
+
+// Initialize rain and fetch weather
+createRainParticles();
+fetchRotterdamWeather();
+// Refresh weather every 10 minutes
+setInterval(fetchRotterdamWeather, 10 * 60 * 1000);
 
 function flickerLights(callback) {
   const flickerCount = 4;
@@ -388,9 +573,6 @@ function startPartyMode() {
   document.body.classList.add('dark-mode', 'party-mode');
   scene.background.setHex(darkModeBackground);
 
-  // Disable HDR environment in disco mode - lights take over
-  scene.environment = null;
-
   animateParty();
 }
 
@@ -415,13 +597,14 @@ function togglePartyMode() {
       isDarkMode = false;
       document.body.classList.remove('dark-mode', 'party-mode');
       scene.background.setHex(lightModeBackground);
-      applyLightingMode(lightModeValues);
-      // Restore HDR environment
-      scene.environment = hdrEnvMap;
+      // Restore weather-based lighting
+      applyWeatherLighting();
+      setRainVisible(currentWeather.condition === 'rain' || currentWeather.condition === 'snow');
     } else {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
       scene.background.setHex(darkModeBackground);
+      setRainVisible(false); // No rain in disco mode
       startPartyMode();
     }
     // Update model list colors for dark/light mode
@@ -2275,6 +2458,11 @@ function animate() {
   }
 
   updateSoloInfoTransform();
+
+  // Weather effects
+  updateRain(currentWeather.windSpeed);
+  applyWindWiggle(currentWeather.windSpeed);
+
   renderer.render(scene, camera);
 }
 
