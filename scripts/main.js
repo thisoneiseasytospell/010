@@ -1874,9 +1874,14 @@ function updateModelListVisibility() {
 }
 
 // Track state for sequential animation
-let modelListBlurringOut = false;
-let modelListBlurringIn = false;
 let modelListShowingGoTop = false;
+let modelListAnimationTimeouts = [];
+
+// Clear all pending animation timeouts
+function clearModelListAnimations() {
+  modelListAnimationTimeouts.forEach(id => clearTimeout(id));
+  modelListAnimationTimeouts = [];
+}
 
 // Toggle model list between model picker and go-to-top based on scroll
 function updateModelListState() {
@@ -1901,9 +1906,12 @@ function updateModelListState() {
 }
 
 function blurOutModelListItems() {
-  if (modelListBlurringOut) return;
-  modelListBlurringOut = true;
+  // Cancel any pending animations
+  clearModelListAnimations();
   modelListShowingGoTop = true;
+
+  // Hide go-to-top immediately in case it's visible
+  modelListGoTop?.classList.remove('visible');
 
   const items = modelListItems.querySelectorAll('.model-list-item');
   const activeIndex = currentModelIndex;
@@ -1917,24 +1925,25 @@ function blurOutModelListItems() {
 
   // Blur out items sequentially (furthest from active first)
   sortedItems.forEach((entry, i) => {
-    setTimeout(() => {
+    const id = setTimeout(() => {
       entry.item.classList.add('blurring-out');
     }, i * 40);
+    modelListAnimationTimeouts.push(id);
   });
 
   // After all items blur out, show go-to-top
-  setTimeout(() => {
+  const finalId = setTimeout(() => {
     modelListGoTop?.classList.add('visible');
-    modelListBlurringOut = false;
   }, sortedItems.length * 40 + 100);
+  modelListAnimationTimeouts.push(finalId);
 }
 
 function showModelListItems() {
-  if (modelListBlurringIn) return;
-  modelListBlurringIn = true;
+  // Cancel any pending animations
+  clearModelListAnimations();
   modelListShowingGoTop = false;
 
-  // Hide go-to-top first
+  // Hide go-to-top immediately
   modelListGoTop?.classList.remove('visible');
 
   const items = modelListItems.querySelectorAll('.model-list-item');
@@ -1947,18 +1956,16 @@ function showModelListItems() {
     index
   })).sort((a, b) => a.distance - b.distance);
 
-  // Blur in items sequentially (closest to active first)
-  setTimeout(() => {
+  // Remove blur from all items immediately then animate in
+  const startId = setTimeout(() => {
     sortedItems.forEach((entry, i) => {
-      setTimeout(() => {
+      const id = setTimeout(() => {
         entry.item.classList.remove('blurring-out');
       }, i * 40);
+      modelListAnimationTimeouts.push(id);
     });
-
-    setTimeout(() => {
-      modelListBlurringIn = false;
-    }, sortedItems.length * 40);
-  }, 200);
+  }, 100);
+  modelListAnimationTimeouts.push(startId);
 }
 
 // Show header when in solo mode or when scrolled to text section
