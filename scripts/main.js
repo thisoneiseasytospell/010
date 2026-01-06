@@ -1115,6 +1115,7 @@ function exitIntro() {
   }, 300);
 
   // Enable scrolling
+  document.documentElement.classList.remove('intro-active');
   document.body.classList.remove('intro-active');
 
   if (introOverlay) {
@@ -1647,6 +1648,7 @@ const modelListItems = document.getElementById('model-list-items');
 const modelListGoTop = document.getElementById('model-list-go-top');
 
 // Set intro-active class initially to prevent scrolling
+document.documentElement.classList.add('intro-active');
 document.body.classList.add('intro-active');
 
 async function loadTextContent() {

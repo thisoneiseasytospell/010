@@ -40,10 +40,14 @@ body.dark-mode {
   background: #0a0a0a;
 }
 
+html.intro-active,
 body.intro-active {
-  overflow: hidden;
+  overflow: hidden !important;
   height: 100dvh;
   touch-action: none;
+  overscroll-behavior: none;
+  position: fixed;
+  width: 100%;
 }
 
 body:not(.intro-active) {
