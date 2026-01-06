@@ -225,11 +225,12 @@ container.appendChild(renderer.domElement);
 // HDR Environment for realistic reflections
 const pmremGenerator = new THREE.PMREMGenerator(renderer);
 pmremGenerator.compileEquirectangularShader();
+let hdrEnvMap = null;
 
 new RGBELoader()
   .load('./assets/studio.hdr', (hdrTexture) => {
-    const envMap = pmremGenerator.fromEquirectangular(hdrTexture).texture;
-    scene.environment = envMap;
+    hdrEnvMap = pmremGenerator.fromEquirectangular(hdrTexture).texture;
+    scene.environment = hdrEnvMap;
     hdrTexture.dispose();
     pmremGenerator.dispose();
   });
@@ -270,21 +271,22 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Lighting - Studio setup
-const ambient = new THREE.AmbientLight(0xffffff, 2.0);
+// Reduced light intensities - HDR provides main lighting
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.4);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.1);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0x9c9c9c, 1.5);
+const keyLight = new THREE.DirectionalLight(0x9c9c9c, 0.4);
 keyLight.position.set(8, 10, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xf0f4ff, 1.6);
+const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.3);
 fillLight.position.set(-6, 5, 5);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
 rimLight.position.set(0, 3, -8);
 scene.add(rimLight);
 
@@ -293,7 +295,17 @@ let isDarkMode = false;
 const lightModeBackground = 0xf5f5f0;
 const darkModeBackground = 0x0a0a0a;
 
+// Light mode: reduced for HDR
 const lightModeValues = {
+  ambient: { color: 0xffffff, intensity: 0.3 },
+  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.1 },
+  key: { color: 0x9c9c9c, intensity: 0.4 },
+  fill: { color: 0xf0f4ff, intensity: 0.3 },
+  rim: { color: 0xffffff, intensity: 0.2 }
+};
+
+// Disco mode: full intensity, no HDR
+const discoModeValues = {
   ambient: { color: 0xffffff, intensity: 2.0 },
   hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
   key: { color: 0x9c9c9c, intensity: 1.5 },
@@ -376,6 +388,9 @@ function startPartyMode() {
   document.body.classList.add('dark-mode', 'party-mode');
   scene.background.setHex(darkModeBackground);
 
+  // Disable HDR environment in disco mode - lights take over
+  scene.environment = null;
+
   animateParty();
 }
 
@@ -401,6 +416,8 @@ function togglePartyMode() {
       document.body.classList.remove('dark-mode', 'party-mode');
       scene.background.setHex(lightModeBackground);
       applyLightingMode(lightModeValues);
+      // Restore HDR environment
+      scene.environment = hdrEnvMap;
     } else {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
@@ -499,14 +516,55 @@ function requestGyroPermission() {
           gyroPermissionGranted = true;
           gyroEnabled = true;
           window.addEventListener('deviceorientation', handleGyro);
+          window.addEventListener('devicemotion', handleShake);
         }
       })
       .catch(console.error);
+
+    // Also request motion permission for shake detection
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      DeviceMotionEvent.requestPermission().catch(() => {});
+    }
   } else if ('DeviceOrientationEvent' in window) {
     // Non-iOS devices
     gyroPermissionGranted = true;
     gyroEnabled = true;
     window.addEventListener('deviceorientation', handleGyro);
+    window.addEventListener('devicemotion', handleShake);
+  }
+}
+
+// Shake detection for disco mode
+let lastShakeTime = 0;
+let shakeCount = 0;
+const SHAKE_THRESHOLD = 15; // Acceleration threshold
+const SHAKE_RESET_TIME = 500; // Reset shake count after this many ms
+const SHAKES_NEEDED = 3; // Number of shakes to trigger disco
+
+function handleShake(event) {
+  const acc = event.accelerationIncludingGravity;
+  if (!acc) return;
+
+  const totalAcceleration = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z);
+  const now = Date.now();
+
+  // Detect sudden acceleration change (shake)
+  if (totalAcceleration > SHAKE_THRESHOLD) {
+    if (now - lastShakeTime > 100) { // Debounce
+      shakeCount++;
+      lastShakeTime = now;
+
+      if (shakeCount >= SHAKES_NEEDED) {
+        shakeCount = 0;
+        togglePartyMode();
+      }
+    }
+  }
+
+  // Reset shake count if no shakes for a while
+  if (now - lastShakeTime > SHAKE_RESET_TIME) {
+    shakeCount = 0;
   }
 }
 
@@ -660,34 +718,8 @@ function onTouchMove(event) {
 
       mobileGridTouchTargetY = newTargetY;
     } else {
-      // Vertical scroll
-      const scrollDelta = mobileTouchStartY - touch.clientY;
-      // Convert screen pixels to scene units (larger divisor = slower scroll)
-      const scrollAmount = scrollDelta / 80;
-
-      // Hide header while scrolling
-      if (Math.abs(scrollDelta) > 10) {
-        hideMobileHeader();
-        if (mobileScrollShowTimer) clearTimeout(mobileScrollShowTimer);
-      }
-
-      const bounds = getMobileScrollBounds();
-      mobileScrollTarget = THREE.MathUtils.clamp(
-        mobileTouchStartScroll + scrollAmount,
-        bounds.min,
-        bounds.max
-      );
-
-      // Track velocity for momentum
-      const now = Date.now();
-      if (lastTouchTime > 0) {
-        const dt = now - lastTouchTime;
-        if (dt > 0) {
-          mobileScrollVelocity = (touch.clientY - lastTouchY) / dt * -0.5;
-        }
-      }
+      // Track swipe delta for discrete model switching
       lastTouchY = touch.clientY;
-      lastTouchTime = now;
     }
     return;
   }
@@ -704,7 +736,7 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
-  // Handle mobile scroll end - snap to nearest
+  // Handle mobile scroll end - discrete model switching
   const config = getGridConfig();
   if (config.isMobileScroll && isMobileScrolling) {
     isMobileScrolling = false;
@@ -716,21 +748,34 @@ function onTouchEnd(event) {
       mobileGridTouchTargetY = 0;
       mobileGridTouchRotating = false;
       lastMobileRotationTime = 0;
-      // Momentum continues in animate loop via velocity
     } else {
-      // Apply momentum then snap
-      const bounds = getMobileScrollBounds();
-      mobileScrollTarget = THREE.MathUtils.clamp(
-        mobileScrollTarget + mobileScrollVelocity * 10,
-        bounds.min,
-        bounds.max
-      );
+      // Discrete swipe: detect direction and switch model
+      const swipeDelta = mobileTouchStartY - lastTouchY;
+      const swipeThreshold = 50; // pixels needed to trigger switch
 
-      // Snap to nearest model
-      snapToNearestModel();
+      if (Math.abs(swipeDelta) > swipeThreshold) {
+        if (swipeDelta > 0) {
+          // Swipe up - next model
+          mobileCurrentModelIndex = Math.min(mobileCurrentModelIndex + 1, models.length);
+        } else {
+          // Swipe down - previous model
+          mobileCurrentModelIndex = Math.max(mobileCurrentModelIndex - 1, 0);
+        }
+      }
 
-      // Show header after scroll settles
-      scheduleMobileHeaderShow();
+      // Snap to current model
+      mobileScrollTarget = mobileCurrentModelIndex * config.cellHeight;
+      updateModelInfoDisplay();
+
+      // If at Info position, scroll to text section
+      if (mobileCurrentModelIndex >= models.length) {
+        const textSection = document.getElementById('text-section');
+        if (textSection) {
+          setTimeout(() => {
+            textSection.scrollIntoView({ behavior: 'smooth' });
+          }, 200);
+        }
+      }
     }
   }
 
@@ -1623,8 +1668,14 @@ init();
 // Request gyro permissions early on touch devices
 // iOS requires user gesture, but Android can request immediately
 if (isTouchDevice) {
-  // Try requesting immediately (works on Android)
-  requestGyroPermission();
+  // Check if this is iOS (has requestPermission method)
+  const isIOS = typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function';
+  if (!isIOS) {
+    // Android/other: Request immediately (no user gesture needed)
+    requestGyroPermission();
+  }
+  // iOS will request on first touch in intro exit
 }
 
 // Text section - load and reveal
