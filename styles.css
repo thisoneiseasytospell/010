@@ -7,12 +7,7 @@
 }
 
 :root {
-  color-scheme: dark;
-  --bg: #08090d;
-  --card-bg: #11131a;
   --text: #f5f7ff;
-  --accent: #4adeff;
-  --shadow: 0 1.6rem 3.2rem rgba(0, 0, 0, 0.4);
   font-family: 'WTSkrappaTRIAL', 'Inter', 'Helvetica Neue', Arial, sans-serif;
 }
 

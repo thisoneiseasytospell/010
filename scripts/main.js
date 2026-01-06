@@ -33,8 +33,6 @@ let modelInfoById = new Map();
 const GRID_MODEL_SIZE = 2.916;
 const SOLO_MODEL_SIZE = 4.725;
 
-const SOLO_MODEL_X_OFFSET = 0; // Centered on desktop
-const SOLO_MODEL_Y_OFFSET = 0; // Centered in solo mode
 const SOLO_MODEL_TRANSITION_SPEED = 0.12;
 const SOLO_MODEL_TRANSITION_THRESHOLD = 0.01;
 const SOLO_MOUSE_ROTATION_Y_FACTOR = 0.25;
@@ -822,6 +820,36 @@ function onClick(event) {
   handleInteraction();
 }
 
+// Helper: Set up a model for solo mode (scale, center, optional random rotation)
+function setupModelForSoloMode(model, applyRandomRotation = false) {
+  if (!model || !model.object) return;
+
+  const innerObj = model.object.userData.innerObject;
+
+  // Scale up for solo mode
+  if (innerObj && model.object.userData.baseScale) {
+    const soloScale = model.object.userData.baseScale * (SOLO_MODEL_SIZE / GRID_MODEL_SIZE);
+    innerObj.scale.setScalar(soloScale);
+  }
+
+  // Center dynamically using bounding box
+  model.object.position.set(0, 0, 0);
+  model.object.updateMatrixWorld(true);
+  const bbox = new THREE.Box3().setFromObject(model.object);
+  const center = new THREE.Vector3();
+  bbox.getCenter(center);
+  model.object.position.x = -center.x;
+  model.object.position.y = -center.y;
+
+  // Apply random rotation if requested
+  if (applyRandomRotation && innerObj) {
+    innerObj.rotation.x = (Math.random() - 0.5) * Math.PI * 0.8;
+    innerObj.rotation.y = (Math.random() - 0.5) * Math.PI * 2;
+    innerObj.rotation.z = (Math.random() - 0.5) * Math.PI * 0.3;
+    model.object.userData.isTransitioning = true;
+  }
+}
+
 // Switch to different model
 function switchToModel(index) {
   currentModelIndex = index;
@@ -833,37 +861,12 @@ function switchToModel(index) {
   touchDragTargetY = 0;
 
   if (!isGridMode) {
-    // Solo mode: Show only current model, scale up, center it
-    const isPortrait = window.innerWidth / window.innerHeight < 1;
     sceneModels.forEach((model, i) => {
       if (model && model.object) {
         const wasVisible = model.object.visible;
         model.object.visible = (i === index);
-
         if (i === index) {
-          // Scale up for solo mode first
-          const innerObj = model.object.userData.innerObject;
-          if (innerObj && model.object.userData.baseScale) {
-            const soloScaleVal = model.object.userData.baseScale * (SOLO_MODEL_SIZE / GRID_MODEL_SIZE);
-            innerObj.scale.setScalar(soloScaleVal);
-          }
-
-          // Position for solo mode - calculate center dynamically
-          model.object.position.set(0, 0, 0);
-          model.object.updateMatrixWorld(true);
-          const bbox = new THREE.Box3().setFromObject(model.object);
-          const center = new THREE.Vector3();
-          bbox.getCenter(center);
-          model.object.position.x = -center.x;
-          model.object.position.y = -center.y;
-
-          // Set random rotation when model becomes visible
-          if (!wasVisible && innerObj) {
-            innerObj.rotation.x = (Math.random() - 0.5) * Math.PI * 0.8;
-            innerObj.rotation.y = (Math.random() - 0.5) * Math.PI * 2;
-            innerObj.rotation.z = (Math.random() - 0.5) * Math.PI * 0.3;
-            model.object.userData.isTransitioning = true;
-          }
+          setupModelForSoloMode(model, !wasVisible);
         }
       }
     });
@@ -876,8 +879,6 @@ function switchToModel(index) {
 // Toggle between grid and solo mode
 function toggleMode() {
   isGridMode = !isGridMode;
-
-  const isPortrait = window.innerWidth / window.innerHeight < 1;
   const config = getGridConfig();
 
   if (isGridMode) {
@@ -885,12 +886,9 @@ function toggleMode() {
     sceneModels.forEach((model, index) => {
       if (model && model.object) {
         model.object.visible = true;
-
-        // Position in grid
         const pos = getGridPosition(index);
         model.object.position.set(pos.x, pos.y, 0);
 
-        // Scale down for grid mode
         const innerObj = model.object.userData.innerObject;
         if (innerObj && model.object.userData.baseScale) {
           const gridScale = model.object.userData.baseScale * (config.modelSize / GRID_MODEL_SIZE);
@@ -899,27 +897,12 @@ function toggleMode() {
       }
     });
   } else {
-    // SOLO MODE - show only current model, scale up, center it
+    // SOLO MODE - show only current model
     sceneModels.forEach((model, i) => {
       if (model && model.object) {
         model.object.visible = (i === currentModelIndex);
-
         if (i === currentModelIndex) {
-          // Scale up for solo mode first
-          const innerObj = model.object.userData.innerObject;
-          if (innerObj && model.object.userData.baseScale) {
-            const soloScaleVal = model.object.userData.baseScale * (SOLO_MODEL_SIZE / GRID_MODEL_SIZE);
-            innerObj.scale.setScalar(soloScaleVal);
-          }
-
-          // Position for solo mode - calculate center dynamically
-          model.object.position.set(0, 0, 0);
-          model.object.updateMatrixWorld(true);
-          const bbox = new THREE.Box3().setFromObject(model.object);
-          const center = new THREE.Vector3();
-          bbox.getCenter(center);
-          model.object.position.x = -center.x;
-          model.object.position.y = -center.y;
+          setupModelForSoloMode(model, false);
         }
       }
     });
@@ -1302,8 +1285,6 @@ function applyGridIntroRandomization(entry) {
   group.userData.gridIntroAnimationId = gridIntroAnimationId;
   return true;
 }
-
-
 window.addEventListener('mousemove', updateMousePosition);
 window.addEventListener('click', onClick);
 window.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -1436,8 +1417,6 @@ function processSceneModel(object3d, modelConfig, modelIndex) {
   object3d.position.z -= scaledCenter.z;
   object3d.position.y -= scaledBBox.min.y;
 
-
-
   const overrideDeg = GRID_ROTATION_OVERRIDE_DEG[modelConfig.id];
   const rotationDeg = typeof modelConfig.gridRotationDeg === 'number'
     ? modelConfig.gridRotationDeg
@@ -1449,10 +1428,6 @@ function processSceneModel(object3d, modelConfig, modelIndex) {
   const group = new THREE.Group();
   group.add(object3d);
 
-  // Store solo mode positions from config
-  const soloXPos = SOLO_MODEL_X_OFFSET + (modelConfig.xOffset || 0);
-  const soloYPos = (modelConfig.yOffset || 0);
-
   // Position in grid by default
   const gridPosition = getGridPosition(modelIndex);
   group.position.set(gridPosition.x, gridPosition.y, 0);
@@ -1462,8 +1437,6 @@ function processSceneModel(object3d, modelConfig, modelIndex) {
   group.userData.baseRotationY = object3d.rotation.y;
   group.userData.baseRotationX = object3d.rotation.x;
   group.userData.baseScale = object3d.scale.x;
-  group.userData.soloXPos = soloXPos;
-  group.userData.soloYPos = soloYPos;
 
   scene.add(group);
   sceneModels[modelIndex] = { object: group };
@@ -2025,8 +1998,6 @@ window.addEventListener('scroll', () => {
     lastPageScrollY = currentScroll;
   }
 });
-
-
 loadTextContent();
 
 // Visibility handling - pause rendering when tab is hidden or models not in viewport
