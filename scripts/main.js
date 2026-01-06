@@ -219,7 +219,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 0.6;
 container.appendChild(renderer.domElement);
 
 // HDR Environment for realistic reflections
@@ -923,10 +923,10 @@ function switchToModel(index) {
   if (!isGridMode) {
     sceneModels.forEach((model, i) => {
       if (model && model.object) {
-        const wasVisible = model.object.visible;
         model.object.visible = (i === index);
         if (i === index) {
-          setupModelForSoloMode(model, !wasVisible);
+          // No random rotation when cycling - smooth transition only
+          setupModelForSoloMode(model, false);
         }
       }
     });
