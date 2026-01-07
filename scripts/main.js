@@ -3,7 +3,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType } from './snow.js';
+import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType, clearSnowAccumulation } from './snow.js';
 
 const container = document.querySelector('#scene-container');
 const introOverlay = document.getElementById('intro-overlay');
@@ -1487,9 +1487,11 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 's' || event.key === 'S') {
     event.preventDefault();
     if (getCurrentPrecipType() === 'snow') {
+      clearSnowAccumulation();
       setPrecipitation('none');
       console.log('Snow: OFF');
     } else {
+      clearSnowAccumulation(); // Clear first to force fresh calculation
       setPrecipitation('snow');
       console.log('Snow: ON');
     }
