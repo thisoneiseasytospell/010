@@ -3,6 +3,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType } from './snow.js';
 
 const container = document.querySelector('#scene-container');
 const introOverlay = document.getElementById('intro-overlay');
@@ -305,212 +306,6 @@ let currentWeather = {
   isDay: true
 };
 
-// Precipitation system (rain/snow)
-let precipitationParticles = null;
-let precipitationGeometry = null;
-const PRECIP_COUNT = 5000;
-const precipVelocities = [];
-const precipDrift = [];
-let currentPrecipType = 'none'; // 'rain', 'snow', 'none'
-
-function createPrecipitationSystem() {
-  precipitationGeometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(PRECIP_COUNT * 3);
-
-  for (let i = 0; i < PRECIP_COUNT; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 20;     // x
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 15; // y
-    positions[i * 3 + 2] = 5 + Math.random() * 3;      // z - between camera (10) and models (0)
-    precipVelocities.push(0.03 + Math.random() * 0.05);
-    precipDrift.push((Math.random() - 0.5) * 0.02);
-  }
-
-  precipitationGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-  const precipMaterial = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 1.5,
-    transparent: true,
-    opacity: 0.85,
-    sizeAttenuation: false
-  });
-
-  precipitationParticles = new THREE.Points(precipitationGeometry, precipMaterial);
-  precipitationParticles.visible = false;
-  precipitationParticles.renderOrder = 999; // Render on top
-  scene.add(precipitationParticles);
-}
-
-// Update snow accumulation on models - sample actual geometry vertices
-function updateSnowAccumulation() {
-  if (currentPrecipType !== 'snow') return;
-
-  sceneModels.forEach((model) => {
-    if (!model || !model.object) return;
-
-    // Add snow particles on top-facing surfaces
-    if (!model.object.userData.snowParticles) {
-      const snowPositions = [];
-
-      // Collect top-facing vertices from all meshes
-      model.object.traverse((child) => {
-        if (child.isMesh && child.geometry) {
-          const geo = child.geometry;
-          const pos = geo.attributes.position;
-          const normal = geo.attributes.normal;
-
-          if (!pos) return;
-
-          // Get world matrix for this mesh
-          child.updateMatrixWorld(true);
-          const matrix = child.matrixWorld;
-
-          // Sample vertices that face upward
-          for (let i = 0; i < pos.count; i += 3) { // Sample every 3rd vertex
-            const localPos = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
-            const worldPos = localPos.applyMatrix4(matrix);
-
-            // Check if normal faces up (if normals exist)
-            let facesUp = true;
-            if (normal) {
-              const n = new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i));
-              n.transformDirection(matrix);
-              facesUp = n.y > 0.3; // Faces somewhat upward
-            }
-
-            if (facesUp) {
-              // Add slight offset above surface
-              snowPositions.push(
-                worldPos.x - model.object.position.x,
-                worldPos.y - model.object.position.y + 0.05,
-                worldPos.z - model.object.position.z + 0.3
-              );
-            }
-          }
-        }
-      });
-
-      // Create clumpy snow - cluster particles together
-      const maxSnow = 400;
-      const clumpedPositions = [];
-
-      // Pick random base points and cluster around them
-      const numClumps = Math.min(80, snowPositions.length / 9);
-      for (let c = 0; c < numClumps; c++) {
-        const srcIdx = Math.floor(Math.random() * (snowPositions.length / 3)) * 3;
-        const baseX = snowPositions[srcIdx];
-        const baseY = snowPositions[srcIdx + 1];
-        const baseZ = snowPositions[srcIdx + 2];
-
-        // Add 3-6 particles per clump
-        const clumpSize = 3 + Math.floor(Math.random() * 4);
-        for (let p = 0; p < clumpSize && clumpedPositions.length / 3 < maxSnow; p++) {
-          clumpedPositions.push(
-            baseX + (Math.random() - 0.5) * 0.08,
-            baseY + Math.random() * 0.03,
-            baseZ + (Math.random() - 0.5) * 0.08
-          );
-        }
-      }
-
-      if (clumpedPositions.length === 0) return;
-
-      const finalPositions = new Float32Array(clumpedPositions);
-      const snowGeo = new THREE.BufferGeometry();
-      snowGeo.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
-
-      const snowMat = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 1.2,
-        transparent: true,
-        opacity: 0.9,
-        sizeAttenuation: false
-      });
-
-      const snowPoints = new THREE.Points(snowGeo, snowMat);
-      snowPoints.renderOrder = 998;
-      model.object.add(snowPoints);
-      model.object.userData.snowParticles = snowPoints;
-    }
-
-    if (model.object.userData.snowParticles) {
-      model.object.userData.snowParticles.visible = model.object.visible;
-    }
-  });
-}
-
-function hideSnowAccumulation() {
-  sceneModels.forEach((model) => {
-    if (model?.object?.userData?.snowParticles) {
-      model.object.userData.snowParticles.visible = false;
-    }
-  });
-}
-
-
-function updatePrecipitation(windSpeed, isSnow) {
-  if (!precipitationParticles || !precipitationParticles.visible) return;
-
-  const positions = precipitationGeometry.attributes.position.array;
-  const windOffset = windSpeed * 0.01;
-  const fallSpeed = isSnow ? 1.0 : 2.5;
-
-  for (let i = 0; i < PRECIP_COUNT; i++) {
-    // Fall down
-    positions[i * 3 + 1] -= precipVelocities[i] * fallSpeed;
-
-    // Wind and drift
-    positions[i * 3] += windOffset + (isSnow ? precipDrift[i] : 0);
-
-    // Snow has gentle swaying
-    if (isSnow) {
-      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.005;
-    }
-
-    // Reset when below view - follow camera Y
-    const resetY = camera.position.y + 10;
-    const bottomY = camera.position.y - 8;
-    if (positions[i * 3 + 1] < bottomY) {
-      positions[i * 3 + 1] = resetY;
-      positions[i * 3] = (Math.random() - 0.5) * 20;
-      positions[i * 3 + 2] = 5 + Math.random() * 3;
-    }
-
-    // Wrap around horizontally
-    if (positions[i * 3] > 12) positions[i * 3] = -12;
-    if (positions[i * 3] < -12) positions[i * 3] = 12;
-  }
-
-  precipitationGeometry.attributes.position.needsUpdate = true;
-}
-
-function setPrecipitation(type) {
-  currentPrecipType = type;
-
-  if (!precipitationParticles) return;
-
-  if (type === 'none') {
-    precipitationParticles.visible = false;
-    hideSnowAccumulation();
-    return;
-  }
-
-  precipitationParticles.visible = true;
-
-  if (type === 'snow') {
-    // Snow: white, small flakes
-    precipitationParticles.material.color.setHex(0xffffff);
-    precipitationParticles.material.size = 1.5;
-    precipitationParticles.material.opacity = 0.85;
-    updateSnowAccumulation();
-  } else {
-    // Rain: bluish, thin streaks
-    precipitationParticles.material.color.setHex(0x99aacc);
-    precipitationParticles.material.size = 1;
-    precipitationParticles.material.opacity = 0.6;
-    hideSnowAccumulation();
-  }
-}
 
 // Wind wiggle effect - works in all modes
 let windTime = 0;
@@ -603,7 +398,7 @@ async function fetchRotterdamWeather() {
 }
 
 // Initialize rain and fetch weather
-createPrecipitationSystem();
+initSnow(scene, camera, sceneModels);
 fetchRotterdamWeather();
 // Refresh weather every 10 minutes
 setInterval(fetchRotterdamWeather, 10 * 60 * 1000);
@@ -1680,7 +1475,7 @@ window.addEventListener('keydown', (event) => {
   // Toggle snow with S key (desktop only)
   if (event.key === 's' || event.key === 'S') {
     event.preventDefault();
-    if (currentPrecipType === 'snow') {
+    if (getCurrentPrecipType() === 'snow') {
       setPrecipitation('none');
       console.log('Snow: OFF');
     } else {
@@ -2589,7 +2384,7 @@ function animate() {
   updateSoloInfoTransform();
 
   // Weather effects
-  updatePrecipitation(currentWeather.windSpeed, currentPrecipType === 'snow');
+  updatePrecipitation(currentWeather.windSpeed, getCurrentPrecipType() === 'snow');
   applyWindWiggle(currentWeather.windSpeed);
 
   renderer.render(scene, camera);
