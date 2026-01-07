@@ -308,73 +308,95 @@ let currentWeather = {
 // Precipitation system (rain/snow)
 let precipitationParticles = null;
 let precipitationGeometry = null;
-let snowAccumulationParticles = null;
-let snowAccumulationGeometry = null;
-const PRECIP_COUNT = 4000;
-const SNOW_ACCUMULATION_COUNT = 1500;
+const PRECIP_COUNT = 5000;
 const precipVelocities = [];
-const precipDrift = []; // horizontal drift for snow
+const precipDrift = [];
 let currentPrecipType = 'none'; // 'rain', 'snow', 'none'
 
 function createPrecipitationSystem() {
-  // Falling precipitation
   precipitationGeometry = new THREE.BufferGeometry();
   const positions = new Float32Array(PRECIP_COUNT * 3);
 
   for (let i = 0; i < PRECIP_COUNT; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 30;
-    positions[i * 3 + 1] = Math.random() * 25 - 5;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
-    precipVelocities.push(0.02 + Math.random() * 0.03); // slow for snow
-    precipDrift.push((Math.random() - 0.5) * 0.02);
+    positions[i * 3] = (Math.random() - 0.5) * 25;     // x - spread wide
+    positions[i * 3 + 1] = Math.random() * 20 - 5;     // y - full height
+    positions[i * 3 + 2] = Math.random() * 8 + 2;      // z - in front of models (camera at z=10)
+    precipVelocities.push(0.02 + Math.random() * 0.04);
+    precipDrift.push((Math.random() - 0.5) * 0.03);
   }
 
   precipitationGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   const precipMaterial = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.08,
+    size: 0.15,
     transparent: true,
-    opacity: 0.9
+    opacity: 0.95,
+    sizeAttenuation: true
   });
 
   precipitationParticles = new THREE.Points(precipitationGeometry, precipMaterial);
   precipitationParticles.visible = false;
   scene.add(precipitationParticles);
+}
 
-  // Snow accumulation on/around models
-  snowAccumulationGeometry = new THREE.BufferGeometry();
-  const accumPositions = new Float32Array(SNOW_ACCUMULATION_COUNT * 3);
+// Update snow accumulation on models - called after models load
+function updateSnowAccumulation() {
+  if (currentPrecipType !== 'snow') return;
 
-  for (let i = 0; i < SNOW_ACCUMULATION_COUNT; i++) {
-    // Distribute around model areas in grid
-    const gridX = (Math.random() - 0.5) * 20;
-    const gridY = (Math.random() - 0.5) * 12;
-    accumPositions[i * 3] = gridX;
-    accumPositions[i * 3 + 1] = gridY + Math.random() * 2; // on top of models
-    accumPositions[i * 3 + 2] = (Math.random() - 0.5) * 3;
-  }
+  sceneModels.forEach((model) => {
+    if (!model || !model.object || !model.object.visible) return;
 
-  snowAccumulationGeometry.setAttribute('position', new THREE.BufferAttribute(accumPositions, 3));
+    // Add snow particles on top of each visible model
+    if (!model.object.userData.snowParticles) {
+      const snowGeo = new THREE.BufferGeometry();
+      const snowCount = 200;
+      const positions = new Float32Array(snowCount * 3);
 
-  const accumMaterial = new THREE.PointsMaterial({
-    color: 0xffffff,
-    size: 0.12,
-    transparent: true,
-    opacity: 0.85
+      // Get model bounds
+      const bbox = new THREE.Box3().setFromObject(model.object);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+
+      for (let i = 0; i < snowCount; i++) {
+        // Place on top surface of model
+        positions[i * 3] = (Math.random() - 0.5) * size.x * 0.8;
+        positions[i * 3 + 1] = bbox.max.y - model.object.position.y + Math.random() * 0.3;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * size.z * 0.8;
+      }
+
+      snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+      const snowMat = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.08,
+        transparent: true,
+        opacity: 0.9
+      });
+
+      const snowPoints = new THREE.Points(snowGeo, snowMat);
+      model.object.add(snowPoints);
+      model.object.userData.snowParticles = snowPoints;
+    }
+
+    model.object.userData.snowParticles.visible = true;
   });
+}
 
-  snowAccumulationParticles = new THREE.Points(snowAccumulationGeometry, accumMaterial);
-  snowAccumulationParticles.visible = false;
-  scene.add(snowAccumulationParticles);
+function hideSnowAccumulation() {
+  sceneModels.forEach((model) => {
+    if (model?.object?.userData?.snowParticles) {
+      model.object.userData.snowParticles.visible = false;
+    }
+  });
 }
 
 function updatePrecipitation(windSpeed, isSnow) {
   if (!precipitationParticles || !precipitationParticles.visible) return;
 
   const positions = precipitationGeometry.attributes.position.array;
-  const windOffset = windSpeed * 0.015;
-  const fallSpeed = isSnow ? 1.0 : 3.0; // snow falls slower
+  const windOffset = windSpeed * 0.01;
+  const fallSpeed = isSnow ? 1.0 : 3.0;
 
   for (let i = 0; i < PRECIP_COUNT; i++) {
     // Fall down
@@ -385,26 +407,29 @@ function updatePrecipitation(windSpeed, isSnow) {
 
     // Snow has gentle swaying
     if (isSnow) {
-      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.005;
+      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.008;
+      positions[i * 3 + 2] += Math.cos(Date.now() * 0.0008 + i * 0.5) * 0.003;
     }
 
-    // Reset when below view
-    if (positions[i * 3 + 1] < -12) {
-      positions[i * 3 + 1] = 18;
-      positions[i * 3] = (Math.random() - 0.5) * 30;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+    // Reset when below view - follow camera Y for mobile
+    const resetY = camera.position.y + 12;
+    const bottomY = camera.position.y - 10;
+    if (positions[i * 3 + 1] < bottomY) {
+      positions[i * 3 + 1] = resetY;
+      positions[i * 3] = (Math.random() - 0.5) * 25;
+      positions[i * 3 + 2] = Math.random() * 8 + 2;
     }
 
-    // Wrap around
-    if (positions[i * 3] > 18) positions[i * 3] = -18;
-    if (positions[i * 3] < -18) positions[i * 3] = 18;
+    // Wrap around horizontally
+    if (positions[i * 3] > 15) positions[i * 3] = -15;
+    if (positions[i * 3] < -15) positions[i * 3] = 15;
   }
 
   precipitationGeometry.attributes.position.needsUpdate = true;
 
-  // Update accumulation position with camera (for mobile scroll)
-  if (snowAccumulationParticles && snowAccumulationParticles.visible) {
-    snowAccumulationParticles.position.y = camera.position.y;
+  // Update snow accumulation on models
+  if (isSnow) {
+    updateSnowAccumulation();
   }
 }
 
@@ -415,7 +440,7 @@ function setPrecipitation(type) {
 
   if (type === 'none') {
     precipitationParticles.visible = false;
-    if (snowAccumulationParticles) snowAccumulationParticles.visible = false;
+    hideSnowAccumulation();
     return;
   }
 
@@ -424,15 +449,15 @@ function setPrecipitation(type) {
   if (type === 'snow') {
     // Snow: white, larger, with accumulation
     precipitationParticles.material.color.setHex(0xffffff);
-    precipitationParticles.material.size = 0.1;
-    precipitationParticles.material.opacity = 0.9;
-    if (snowAccumulationParticles) snowAccumulationParticles.visible = true;
+    precipitationParticles.material.size = 0.15;
+    precipitationParticles.material.opacity = 0.95;
+    updateSnowAccumulation();
   } else {
     // Rain: bluish, smaller streaks
-    precipitationParticles.material.color.setHex(0x8899bb);
-    precipitationParticles.material.size = 0.04;
-    precipitationParticles.material.opacity = 0.6;
-    if (snowAccumulationParticles) snowAccumulationParticles.visible = false;
+    precipitationParticles.material.color.setHex(0x99aacc);
+    precipitationParticles.material.size = 0.06;
+    precipitationParticles.material.opacity = 0.7;
+    hideSnowAccumulation();
   }
 }
 
