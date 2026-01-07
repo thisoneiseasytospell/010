@@ -497,11 +497,14 @@ function togglePartyMode() {
   setTimeout(() => { partyToggleCooldown = false; }, 1500);
 
   flickerLights(() => {
+    const themeColorMeta = document.getElementById('theme-color-meta');
     if (isPartyMode) {
       stopPartyMode();
       isDarkMode = false;
       document.body.classList.remove('dark-mode', 'party-mode');
       scene.background.setHex(lightModeBackground);
+      // Update Safari bar color
+      if (themeColorMeta) themeColorMeta.content = '#f5f5f0';
       // Restore studio lighting
       applyStudioLighting();
       // Restore precipitation
@@ -516,6 +519,8 @@ function togglePartyMode() {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
       scene.background.setHex(darkModeBackground);
+      // Update Safari bar color to black
+      if (themeColorMeta) themeColorMeta.content = '#0a0a0a';
       // Keep snow in disco mode if it was on
       startPartyMode();
     }
@@ -740,6 +745,7 @@ function updateMousePosition(event) {
 
 // Touch handlers
 let touchStartTime = 0;
+let lastTouchEndTime = 0; // Prevent click firing after touch
 let lastTapTime = 0;
 const TAP_THRESHOLD = 200; // ms - taps shorter than this trigger interaction
 const DOUBLE_TAP_THRESHOLD = 300; // ms - taps within this time are double tap
@@ -831,6 +837,8 @@ function onTouchMove(event) {
 }
 
 function onTouchEnd(event) {
+  lastTouchEndTime = Date.now(); // Track for click prevention
+
   // Handle mobile scroll end - discrete model switching
   const config = getGridConfig();
   if (config.isMobileScroll && isMobileScrolling) {
@@ -954,6 +962,9 @@ function handleInteraction() {
 }
 
 function onClick(event) {
+  // Prevent click from firing after touch (mobile fires both)
+  if (Date.now() - lastTouchEndTime < 300) return;
+
   if (introActive) {
     exitIntro();
     // Request gyro permission on click for iOS (needs user gesture)
@@ -1587,12 +1598,20 @@ function processSceneModel(object3d, modelConfig, modelIndex) {
   object3d.position.z -= scaledCenter.z;
   object3d.position.y -= scaledBBox.min.y;
 
+  // Random base rotation for each model - gives variety
   const overrideDeg = GRID_ROTATION_OVERRIDE_DEG[modelConfig.id];
-  const rotationDeg = typeof modelConfig.gridRotationDeg === 'number'
+  const baseRotationDeg = typeof modelConfig.gridRotationDeg === 'number'
     ? modelConfig.gridRotationDeg
     : (overrideDeg !== undefined ? overrideDeg : DEFAULT_GRID_ROTATION_DEG);
-  const rotationRad = THREE.MathUtils.degToRad(rotationDeg);
-  object3d.rotation.y += rotationRad;
+
+  // Add random variation to base rotation
+  const randomYOffset = (Math.random() - 0.5) * 40; // ±20 degrees
+  const randomXOffset = (Math.random() - 0.5) * 20; // ±10 degrees tilt
+  const rotationRadY = THREE.MathUtils.degToRad(baseRotationDeg + randomYOffset);
+  const rotationRadX = THREE.MathUtils.degToRad(randomXOffset);
+
+  object3d.rotation.y += rotationRadY;
+  object3d.rotation.x += rotationRadX;
 
   // Create group
   const group = new THREE.Group();
