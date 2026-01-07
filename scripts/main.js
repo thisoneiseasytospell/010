@@ -305,65 +305,134 @@ let currentWeather = {
   isDay: true
 };
 
-// Rain particle system
-let rainParticles = null;
-let rainGeometry = null;
-const RAIN_COUNT = 2000;
-const rainVelocities = [];
+// Precipitation system (rain/snow)
+let precipitationParticles = null;
+let precipitationGeometry = null;
+let snowAccumulationParticles = null;
+let snowAccumulationGeometry = null;
+const PRECIP_COUNT = 4000;
+const SNOW_ACCUMULATION_COUNT = 1500;
+const precipVelocities = [];
+const precipDrift = []; // horizontal drift for snow
+let currentPrecipType = 'none'; // 'rain', 'snow', 'none'
 
-function createRainParticles() {
-  rainGeometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(RAIN_COUNT * 3);
+function createPrecipitationSystem() {
+  // Falling precipitation
+  precipitationGeometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(PRECIP_COUNT * 3);
 
-  for (let i = 0; i < RAIN_COUNT; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 30;     // x
-    positions[i * 3 + 1] = Math.random() * 20 - 5;     // y
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 10; // z
-    rainVelocities.push(0.1 + Math.random() * 0.2);    // fall speed
+  for (let i = 0; i < PRECIP_COUNT; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 30;
+    positions[i * 3 + 1] = Math.random() * 25 - 5;
+    positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+    precipVelocities.push(0.02 + Math.random() * 0.03); // slow for snow
+    precipDrift.push((Math.random() - 0.5) * 0.02);
   }
 
-  rainGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  precipitationGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  const rainMaterial = new THREE.PointsMaterial({
-    color: 0x8899aa,
-    size: 0.05,
+  const precipMaterial = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.08,
     transparent: true,
-    opacity: 0.6
+    opacity: 0.9
   });
 
-  rainParticles = new THREE.Points(rainGeometry, rainMaterial);
-  rainParticles.visible = false;
-  scene.add(rainParticles);
-}
+  precipitationParticles = new THREE.Points(precipitationGeometry, precipMaterial);
+  precipitationParticles.visible = false;
+  scene.add(precipitationParticles);
 
-function updateRain(windSpeed) {
-  if (!rainParticles || !rainParticles.visible) return;
+  // Snow accumulation on/around models
+  snowAccumulationGeometry = new THREE.BufferGeometry();
+  const accumPositions = new Float32Array(SNOW_ACCUMULATION_COUNT * 3);
 
-  const positions = rainGeometry.attributes.position.array;
-  const windOffset = windSpeed * 0.02;
-
-  for (let i = 0; i < RAIN_COUNT; i++) {
-    // Fall down
-    positions[i * 3 + 1] -= rainVelocities[i];
-    // Wind pushes sideways
-    positions[i * 3] += windOffset;
-
-    // Reset when below view
-    if (positions[i * 3 + 1] < -10) {
-      positions[i * 3 + 1] = 15;
-      positions[i * 3] = (Math.random() - 0.5) * 30;
-    }
-    // Wrap around if blown too far
-    if (positions[i * 3] > 15) positions[i * 3] = -15;
-    if (positions[i * 3] < -15) positions[i * 3] = 15;
+  for (let i = 0; i < SNOW_ACCUMULATION_COUNT; i++) {
+    // Distribute around model areas in grid
+    const gridX = (Math.random() - 0.5) * 20;
+    const gridY = (Math.random() - 0.5) * 12;
+    accumPositions[i * 3] = gridX;
+    accumPositions[i * 3 + 1] = gridY + Math.random() * 2; // on top of models
+    accumPositions[i * 3 + 2] = (Math.random() - 0.5) * 3;
   }
 
-  rainGeometry.attributes.position.needsUpdate = true;
+  snowAccumulationGeometry.setAttribute('position', new THREE.BufferAttribute(accumPositions, 3));
+
+  const accumMaterial = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.12,
+    transparent: true,
+    opacity: 0.85
+  });
+
+  snowAccumulationParticles = new THREE.Points(snowAccumulationGeometry, accumMaterial);
+  snowAccumulationParticles.visible = false;
+  scene.add(snowAccumulationParticles);
 }
 
-function setRainVisible(visible) {
-  if (rainParticles) {
-    rainParticles.visible = visible;
+function updatePrecipitation(windSpeed, isSnow) {
+  if (!precipitationParticles || !precipitationParticles.visible) return;
+
+  const positions = precipitationGeometry.attributes.position.array;
+  const windOffset = windSpeed * 0.015;
+  const fallSpeed = isSnow ? 1.0 : 3.0; // snow falls slower
+
+  for (let i = 0; i < PRECIP_COUNT; i++) {
+    // Fall down
+    positions[i * 3 + 1] -= precipVelocities[i] * fallSpeed;
+
+    // Wind and drift
+    positions[i * 3] += windOffset + (isSnow ? precipDrift[i] : 0);
+
+    // Snow has gentle swaying
+    if (isSnow) {
+      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.005;
+    }
+
+    // Reset when below view
+    if (positions[i * 3 + 1] < -12) {
+      positions[i * 3 + 1] = 18;
+      positions[i * 3] = (Math.random() - 0.5) * 30;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 15;
+    }
+
+    // Wrap around
+    if (positions[i * 3] > 18) positions[i * 3] = -18;
+    if (positions[i * 3] < -18) positions[i * 3] = 18;
+  }
+
+  precipitationGeometry.attributes.position.needsUpdate = true;
+
+  // Update accumulation position with camera (for mobile scroll)
+  if (snowAccumulationParticles && snowAccumulationParticles.visible) {
+    snowAccumulationParticles.position.y = camera.position.y;
+  }
+}
+
+function setPrecipitation(type) {
+  currentPrecipType = type;
+
+  if (!precipitationParticles) return;
+
+  if (type === 'none') {
+    precipitationParticles.visible = false;
+    if (snowAccumulationParticles) snowAccumulationParticles.visible = false;
+    return;
+  }
+
+  precipitationParticles.visible = true;
+
+  if (type === 'snow') {
+    // Snow: white, larger, with accumulation
+    precipitationParticles.material.color.setHex(0xffffff);
+    precipitationParticles.material.size = 0.1;
+    precipitationParticles.material.opacity = 0.9;
+    if (snowAccumulationParticles) snowAccumulationParticles.visible = true;
+  } else {
+    // Rain: bluish, smaller streaks
+    precipitationParticles.material.color.setHex(0x8899bb);
+    precipitationParticles.material.size = 0.04;
+    precipitationParticles.material.opacity = 0.6;
+    if (snowAccumulationParticles) snowAccumulationParticles.visible = false;
   }
 }
 
@@ -443,7 +512,13 @@ async function fetchRotterdamWeather() {
     console.log('Rotterdam weather:', currentWeather);
 
     // Apply precipitation (rain/snow) - lighting stays constant
-    setRainVisible(condition === 'rain' || condition === 'snow');
+    if (condition === 'snow') {
+      setPrecipitation('snow');
+    } else if (condition === 'rain') {
+      setPrecipitation('rain');
+    } else {
+      setPrecipitation('none');
+    }
 
   } catch (error) {
     console.warn('Could not fetch weather:', error);
@@ -452,7 +527,7 @@ async function fetchRotterdamWeather() {
 }
 
 // Initialize rain and fetch weather
-createRainParticles();
+createPrecipitationSystem();
 fetchRotterdamWeather();
 // Refresh weather every 10 minutes
 setInterval(fetchRotterdamWeather, 10 * 60 * 1000);
@@ -558,12 +633,19 @@ function togglePartyMode() {
       scene.background.setHex(lightModeBackground);
       // Restore studio lighting
       applyStudioLighting();
-      setRainVisible(currentWeather.condition === 'rain' || currentWeather.condition === 'snow');
+      // Restore precipitation
+      if (currentWeather.condition === 'snow') {
+        setPrecipitation('snow');
+      } else if (currentWeather.condition === 'rain') {
+        setPrecipitation('rain');
+      } else {
+        setPrecipitation('none');
+      }
     } else {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
       scene.background.setHex(darkModeBackground);
-      setRainVisible(false); // No rain in disco mode
+      setPrecipitation('none'); // No precipitation in disco mode
       startPartyMode();
     }
     // Update model list colors for dark/light mode
@@ -2419,7 +2501,7 @@ function animate() {
   updateSoloInfoTransform();
 
   // Weather effects
-  updateRain(currentWeather.windSpeed);
+  updatePrecipitation(currentWeather.windSpeed, currentPrecipType === 'snow');
   applyWindWiggle(currentWeather.windSpeed);
 
   renderer.render(scene, camera);
