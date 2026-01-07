@@ -318,25 +318,26 @@ function createPrecipitationSystem() {
   const positions = new Float32Array(PRECIP_COUNT * 3);
 
   for (let i = 0; i < PRECIP_COUNT; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 25;     // x - spread wide
-    positions[i * 3 + 1] = Math.random() * 20 - 5;     // y - full height
-    positions[i * 3 + 2] = Math.random() * 8 + 2;      // z - in front of models (camera at z=10)
-    precipVelocities.push(0.02 + Math.random() * 0.04);
-    precipDrift.push((Math.random() - 0.5) * 0.03);
+    positions[i * 3] = (Math.random() - 0.5) * 20;     // x
+    positions[i * 3 + 1] = (Math.random() - 0.5) * 15; // y
+    positions[i * 3 + 2] = 5 + Math.random() * 3;      // z - between camera (10) and models (0)
+    precipVelocities.push(0.03 + Math.random() * 0.05);
+    precipDrift.push((Math.random() - 0.5) * 0.02);
   }
 
   precipitationGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   const precipMaterial = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 0.15,
+    size: 3,  // Screen pixels, not world units
     transparent: true,
-    opacity: 0.95,
-    sizeAttenuation: true
+    opacity: 0.9,
+    sizeAttenuation: false  // Constant screen size
   });
 
   precipitationParticles = new THREE.Points(precipitationGeometry, precipMaterial);
   precipitationParticles.visible = false;
+  precipitationParticles.renderOrder = 999; // Render on top
   scene.add(precipitationParticles);
 }
 
@@ -396,7 +397,7 @@ function updatePrecipitation(windSpeed, isSnow) {
 
   const positions = precipitationGeometry.attributes.position.array;
   const windOffset = windSpeed * 0.01;
-  const fallSpeed = isSnow ? 1.0 : 3.0;
+  const fallSpeed = isSnow ? 1.0 : 2.5;
 
   for (let i = 0; i < PRECIP_COUNT; i++) {
     // Fall down
@@ -407,30 +408,24 @@ function updatePrecipitation(windSpeed, isSnow) {
 
     // Snow has gentle swaying
     if (isSnow) {
-      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.008;
-      positions[i * 3 + 2] += Math.cos(Date.now() * 0.0008 + i * 0.5) * 0.003;
+      positions[i * 3] += Math.sin(Date.now() * 0.001 + i) * 0.005;
     }
 
-    // Reset when below view - follow camera Y for mobile
-    const resetY = camera.position.y + 12;
-    const bottomY = camera.position.y - 10;
+    // Reset when below view - follow camera Y
+    const resetY = camera.position.y + 10;
+    const bottomY = camera.position.y - 8;
     if (positions[i * 3 + 1] < bottomY) {
       positions[i * 3 + 1] = resetY;
-      positions[i * 3] = (Math.random() - 0.5) * 25;
-      positions[i * 3 + 2] = Math.random() * 8 + 2;
+      positions[i * 3] = (Math.random() - 0.5) * 20;
+      positions[i * 3 + 2] = 5 + Math.random() * 3;
     }
 
     // Wrap around horizontally
-    if (positions[i * 3] > 15) positions[i * 3] = -15;
-    if (positions[i * 3] < -15) positions[i * 3] = 15;
+    if (positions[i * 3] > 12) positions[i * 3] = -12;
+    if (positions[i * 3] < -12) positions[i * 3] = 12;
   }
 
   precipitationGeometry.attributes.position.needsUpdate = true;
-
-  // Update snow accumulation on models
-  if (isSnow) {
-    updateSnowAccumulation();
-  }
 }
 
 function setPrecipitation(type) {
@@ -449,13 +444,13 @@ function setPrecipitation(type) {
   if (type === 'snow') {
     // Snow: white, larger, with accumulation
     precipitationParticles.material.color.setHex(0xffffff);
-    precipitationParticles.material.size = 0.15;
-    precipitationParticles.material.opacity = 0.95;
+    precipitationParticles.material.size = 3;
+    precipitationParticles.material.opacity = 0.9;
     updateSnowAccumulation();
   } else {
     // Rain: bluish, smaller streaks
     precipitationParticles.material.color.setHex(0x99aacc);
-    precipitationParticles.material.size = 0.06;
+    precipitationParticles.material.size = 2;
     precipitationParticles.material.opacity = 0.7;
     hideSnowAccumulation();
   }
