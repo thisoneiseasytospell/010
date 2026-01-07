@@ -1624,6 +1624,18 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Space') {
     event.preventDefault();
     togglePartyMode();
+    return;
+  }
+  // Toggle snow with S key (desktop only)
+  if (event.key === 's' || event.key === 'S') {
+    event.preventDefault();
+    if (currentPrecipType === 'snow') {
+      setPrecipitation('none');
+      console.log('Snow: OFF');
+    } else {
+      setPrecipitation('snow');
+      console.log('Snow: ON');
+    }
   }
 });
 
