@@ -341,46 +341,54 @@ function createPrecipitationSystem() {
   scene.add(precipitationParticles);
 }
 
-// Update snow accumulation on models - called after models load
+// Update snow accumulation on models
 function updateSnowAccumulation() {
   if (currentPrecipType !== 'snow') return;
 
   sceneModels.forEach((model) => {
-    if (!model || !model.object || !model.object.visible) return;
+    if (!model || !model.object) return;
 
-    // Add snow particles on top of each visible model
+    // Add snow particles on top of each model
     if (!model.object.userData.snowParticles) {
       const snowGeo = new THREE.BufferGeometry();
-      const snowCount = 200;
+      const snowCount = 300;
       const positions = new Float32Array(snowCount * 3);
 
       // Get model bounds
+      model.object.updateMatrixWorld(true);
       const bbox = new THREE.Box3().setFromObject(model.object);
       const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
       bbox.getSize(size);
+      bbox.getCenter(center);
+
+      // Local coordinates relative to model
+      const localTop = bbox.max.y - model.object.position.y;
 
       for (let i = 0; i < snowCount; i++) {
-        // Place on top surface of model
-        positions[i * 3] = (Math.random() - 0.5) * size.x * 0.8;
-        positions[i * 3 + 1] = bbox.max.y - model.object.position.y + Math.random() * 0.3;
-        positions[i * 3 + 2] = (Math.random() - 0.5) * size.z * 0.8;
+        // Place on top surface of model with some depth variation
+        positions[i * 3] = (Math.random() - 0.5) * size.x * 1.2;
+        positions[i * 3 + 1] = localTop + Math.random() * 0.2 - 0.1;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * size.z * 1.2 + 0.5;
       }
 
       snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
       const snowMat = new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 0.08,
+        size: 2,
         transparent: true,
-        opacity: 0.9
+        opacity: 0.95,
+        sizeAttenuation: false
       });
 
       const snowPoints = new THREE.Points(snowGeo, snowMat);
+      snowPoints.renderOrder = 998;
       model.object.add(snowPoints);
       model.object.userData.snowParticles = snowPoints;
     }
 
-    model.object.userData.snowParticles.visible = true;
+    model.object.userData.snowParticles.visible = model.object.visible;
   });
 }
 
@@ -391,6 +399,98 @@ function hideSnowAccumulation() {
     }
   });
 }
+
+// Window frame snow (CSS overlay)
+let windowSnowElement = null;
+function createWindowSnow() {
+  windowSnowElement = document.createElement('div');
+  windowSnowElement.id = 'window-snow';
+  windowSnowElement.innerHTML = `
+    <div class="snow-edge snow-top"></div>
+    <div class="snow-edge snow-bottom"></div>
+    <div class="snow-edge snow-left"></div>
+    <div class="snow-edge snow-right"></div>
+  `;
+  document.body.appendChild(windowSnowElement);
+
+  // Add styles
+  const style = document.createElement('style');
+  style.textContent = `
+    #window-snow {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+    #window-snow.visible {
+      display: block;
+    }
+    .snow-edge {
+      position: absolute;
+      background: linear-gradient(to bottom,
+        rgba(255,255,255,0.95) 0%,
+        rgba(255,255,255,0.8) 30%,
+        rgba(255,255,255,0.4) 60%,
+        rgba(255,255,255,0) 100%
+      );
+    }
+    .snow-top {
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 15px;
+    }
+    .snow-bottom {
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 25px;
+      background: linear-gradient(to top,
+        rgba(255,255,255,0.95) 0%,
+        rgba(255,255,255,0.7) 40%,
+        rgba(255,255,255,0.3) 70%,
+        rgba(255,255,255,0) 100%
+      );
+    }
+    .snow-left {
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 10px;
+      background: linear-gradient(to right,
+        rgba(255,255,255,0.9) 0%,
+        rgba(255,255,255,0.5) 50%,
+        rgba(255,255,255,0) 100%
+      );
+    }
+    .snow-right {
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 10px;
+      background: linear-gradient(to left,
+        rgba(255,255,255,0.9) 0%,
+        rgba(255,255,255,0.5) 50%,
+        rgba(255,255,255,0) 100%
+      );
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function showWindowSnow() {
+  if (windowSnowElement) windowSnowElement.classList.add('visible');
+}
+
+function hideWindowSnow() {
+  if (windowSnowElement) windowSnowElement.classList.remove('visible');
+}
+
+createWindowSnow();
 
 function updatePrecipitation(windSpeed, isSnow) {
   if (!precipitationParticles || !precipitationParticles.visible) return;
@@ -436,6 +536,7 @@ function setPrecipitation(type) {
   if (type === 'none') {
     precipitationParticles.visible = false;
     hideSnowAccumulation();
+    hideWindowSnow();
     return;
   }
 
@@ -447,12 +548,14 @@ function setPrecipitation(type) {
     precipitationParticles.material.size = 3;
     precipitationParticles.material.opacity = 0.9;
     updateSnowAccumulation();
+    showWindowSnow();
   } else {
     // Rain: bluish, smaller streaks
     precipitationParticles.material.color.setHex(0x99aacc);
     precipitationParticles.material.size = 2;
     precipitationParticles.material.opacity = 0.7;
     hideSnowAccumulation();
+    hideWindowSnow();
   }
 }
 
@@ -665,7 +768,7 @@ function togglePartyMode() {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
       scene.background.setHex(darkModeBackground);
-      setPrecipitation('none'); // No precipitation in disco mode
+      // Keep snow in disco mode if it was on
       startPartyMode();
     }
     // Update model list colors for dark/light mode
