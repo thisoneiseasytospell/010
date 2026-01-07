@@ -138,12 +138,9 @@ function createTextSnow() {
   document.body.appendChild(textSnowElement);
 }
 
-// Update snow accumulation on models using raycasting from above
+// Update snow accumulation on models by sampling top-facing surfaces
 export function updateSnowAccumulation() {
   if (currentPrecipType !== 'snow' || !sceneModels) return;
-
-  const raycaster = new THREE.Raycaster();
-  const downDirection = new THREE.Vector3(0, -1, 0);
 
   sceneModels.forEach((model) => {
     if (!model || !model.object) return;
@@ -157,87 +154,126 @@ export function updateSnowAccumulation() {
       return;
     }
 
-    // Force update all matrices before raycasting
-    model.object.updateMatrixWorld(true);
-    innerObj.updateMatrixWorld(true);
-
-    // Collect all meshes for raycasting and update their matrices
-    const meshes = [];
-    innerObj.traverse((child) => {
-      if (child.isMesh) {
-        child.updateMatrixWorld(true);
-        meshes.push(child);
-      }
-    });
-
-    if (meshes.length === 0) return;
-
-    // Get bounding box AFTER matrices are updated
-    const bbox = new THREE.Box3().setFromObject(innerObj);
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-
     const snowPositions = [];
-    const rayOrigin = new THREE.Vector3();
-    const gridResolution = 40; // Higher resolution for better geometry coverage
 
-    // Cast rays from above in a grid pattern
-    for (let i = 0; i < gridResolution; i++) {
-      for (let j = 0; j < gridResolution; j++) {
-        // Random offset within grid cell for more organic look
-        const x = bbox.min.x + (i + Math.random()) * (size.x / gridResolution);
-        const z = bbox.min.z + (j + Math.random()) * (size.z / gridResolution);
+    // Traverse all meshes and sample vertices on upward-facing surfaces
+    innerObj.traverse((child) => {
+      if (!child.isMesh || !child.geometry) return;
 
-        rayOrigin.set(x, bbox.max.y + 1, z);
-        raycaster.set(rayOrigin, downDirection);
+      const geo = child.geometry;
+      const posAttr = geo.attributes.position;
+      const normalAttr = geo.attributes.normal;
+      const indexAttr = geo.index;
 
-        const intersects = raycaster.intersectObjects(meshes, false);
+      if (!posAttr || !normalAttr) return;
 
-        if (intersects.length > 0) {
-          const hit = intersects[0];
-          // Only place snow on surfaces facing upward
-          if (hit.face && hit.face.normal) {
-            // Transform normal to world space using the normal matrix
-            const normalMatrix = new THREE.Matrix3().getNormalMatrix(hit.object.matrixWorld);
-            const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+      // Get the mesh's transformation to local space of innerObj
+      const meshMatrix = new THREE.Matrix4();
+      child.updateWorldMatrix(true, false);
+      innerObj.updateWorldMatrix(true, false);
 
-            if (worldNormal.y > 0.25) { // Surface faces up enough (lowered threshold)
-              // Convert to innerObj local space
-              const localPoint = hit.point.clone();
-              innerObj.worldToLocal(localPoint);
+      // Get relative transform from mesh to innerObj
+      const innerObjMatrixInverse = innerObj.matrixWorld.clone().invert();
+      meshMatrix.multiplyMatrices(innerObjMatrixInverse, child.matrixWorld);
 
-              snowPositions.push(
-                localPoint.x,
-                localPoint.y + 0.015, // Slight offset above surface
-                localPoint.z
-              );
-            }
+      const normalMatrix = new THREE.Matrix3().getNormalMatrix(meshMatrix);
+
+      // Sample triangles and place snow on upward-facing ones
+      const vertex = new THREE.Vector3();
+      const normal = new THREE.Vector3();
+      const transformedVertex = new THREE.Vector3();
+      const transformedNormal = new THREE.Vector3();
+
+      if (indexAttr) {
+        // Indexed geometry - sample triangles
+        for (let i = 0; i < indexAttr.count; i += 3) {
+          // Get triangle center and average normal
+          let cx = 0, cy = 0, cz = 0;
+          let nx = 0, ny = 0, nz = 0;
+
+          for (let j = 0; j < 3; j++) {
+            const idx = indexAttr.getX(i + j);
+            cx += posAttr.getX(idx);
+            cy += posAttr.getY(idx);
+            cz += posAttr.getZ(idx);
+            nx += normalAttr.getX(idx);
+            ny += normalAttr.getY(idx);
+            nz += normalAttr.getZ(idx);
+          }
+
+          vertex.set(cx / 3, cy / 3, cz / 3);
+          normal.set(nx / 3, ny / 3, nz / 3).normalize();
+
+          // Transform to innerObj local space
+          transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
+          transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
+
+          // Check if surface faces upward in local space (Y is up)
+          if (transformedNormal.y > 0.4) {
+            // Add some randomness within the triangle
+            const rand1 = Math.random() * 0.3;
+            const rand2 = Math.random() * 0.3;
+
+            snowPositions.push(
+              transformedVertex.x + (Math.random() - 0.5) * 0.02,
+              transformedVertex.y + 0.01,
+              transformedVertex.z + (Math.random() - 0.5) * 0.02
+            );
+          }
+        }
+      } else {
+        // Non-indexed geometry
+        for (let i = 0; i < posAttr.count; i += 3) {
+          let cx = 0, cy = 0, cz = 0;
+          let nx = 0, ny = 0, nz = 0;
+
+          for (let j = 0; j < 3; j++) {
+            cx += posAttr.getX(i + j);
+            cy += posAttr.getY(i + j);
+            cz += posAttr.getZ(i + j);
+            nx += normalAttr.getX(i + j);
+            ny += normalAttr.getY(i + j);
+            nz += normalAttr.getZ(i + j);
+          }
+
+          vertex.set(cx / 3, cy / 3, cz / 3);
+          normal.set(nx / 3, ny / 3, nz / 3).normalize();
+
+          transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
+          transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
+
+          if (transformedNormal.y > 0.4) {
+            snowPositions.push(
+              transformedVertex.x + (Math.random() - 0.5) * 0.02,
+              transformedVertex.y + 0.01,
+              transformedVertex.z + (Math.random() - 0.5) * 0.02
+            );
           }
         }
       }
-    }
+    });
 
     if (snowPositions.length === 0) return;
 
-    // Add some clustering for natural look
+    // Limit and add clustering
     const finalPositions = [];
-    const maxSnow = 400;
+    const maxSnow = 500;
+    const step = Math.max(1, Math.floor(snowPositions.length / 3 / maxSnow) * 3);
 
-    for (let i = 0; i < snowPositions.length && finalPositions.length < maxSnow * 3; i += 3) {
-      const baseX = snowPositions[i];
-      const baseY = snowPositions[i + 1];
-      const baseZ = snowPositions[i + 2];
+    for (let i = 0; i < snowPositions.length && finalPositions.length < maxSnow * 3; i += step) {
+      const x = snowPositions[i];
+      const y = snowPositions[i + 1];
+      const z = snowPositions[i + 2];
 
-      // Main point
-      finalPositions.push(baseX, baseY, baseZ);
+      finalPositions.push(x, y, z);
 
-      // Add 1-3 nearby particles for clumping
-      const clumpCount = Math.floor(Math.random() * 3);
+      // Add 1-2 clustered particles
+      const clumpCount = 1 + Math.floor(Math.random() * 2);
       for (let c = 0; c < clumpCount && finalPositions.length < maxSnow * 3; c++) {
         finalPositions.push(
-          baseX + (Math.random() - 0.5) * 0.05,
-          baseY + Math.random() * 0.02,
-          baseZ + (Math.random() - 0.5) * 0.05
+          x + (Math.random() - 0.5) * 0.03,
+          y + Math.random() * 0.015,
+          z + (Math.random() - 0.5) * 0.03
         );
       }
     }

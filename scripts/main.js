@@ -521,7 +521,8 @@ function togglePartyMode() {
       scene.background.setHex(darkModeBackground);
       // Update Safari bar color to black
       if (themeColorMeta) themeColorMeta.content = '#0a0a0a';
-      // Keep snow in disco mode if it was on
+      // Enable snow in disco mode
+      setPrecipitation('snow');
       startPartyMode();
     }
     // Update model list colors for dark/light mode
@@ -762,13 +763,21 @@ function onTouchStart(event) {
     touchStartTime = Date.now();
     touchDragging = false;
 
-    // Mobile scroll
+    // Mobile scroll - only if touch is within scene container
     const config = getGridConfig();
     if (config.isMobileScroll && isGridMode) {
-      mobileTouchStartY = touch.clientY;
-      mobileTouchStartScroll = mobileScrollTarget;
-      isMobileScrolling = true;
-      mobileScrollVelocity = 0;
+      // Check if touch is in the scene area (not text section)
+      const sceneRect = container?.getBoundingClientRect();
+      const touchInScene = sceneRect && touch.clientY < sceneRect.bottom && touch.clientY > sceneRect.top;
+
+      if (touchInScene) {
+        mobileTouchStartY = touch.clientY;
+        mobileTouchStartScroll = mobileScrollTarget;
+        isMobileScrolling = true;
+        mobileScrollVelocity = 0;
+      } else {
+        isMobileScrolling = false;
+      }
     }
   }
 }
