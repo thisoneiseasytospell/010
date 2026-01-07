@@ -254,23 +254,23 @@ window.addEventListener('beforeunload', () => {
   dracoLoader.dispose();
 });
 
-// Lighting - Studio setup (weather-reactive)
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+// Lighting - Studio setup for ceramic look
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.4);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f0f0, 0.3);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-keyLight.position.set(8, 10, 6);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+keyLight.position.set(5, 8, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xf0f4ff, 0.8);
-fillLight.position.set(-6, 5, 5);
+const fillLight = new THREE.DirectionalLight(0xf8f8ff, 0.6);
+fillLight.position.set(-6, 4, 4);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
-rimLight.position.set(0, 3, -8);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+rimLight.position.set(0, 2, -6);
 scene.add(rimLight);
 
 // Dark mode
@@ -278,13 +278,13 @@ let isDarkMode = false;
 const lightModeBackground = 0xf5f5f0;
 const darkModeBackground = 0x0a0a0a;
 
-// Base light values (sunny day)
-const baseLightValues = {
-  ambient: { color: 0xffffff, intensity: 0.6 },
-  hemi: { sky: 0xffffff, ground: 0xffffff, intensity: 0.4 },
-  key: { color: 0xffffff, intensity: 1.2 },
-  fill: { color: 0xf0f4ff, intensity: 0.8 },
-  rim: { color: 0xffffff, intensity: 0.5 }
+// Studio light values (static, ceramic look)
+const studioLightValues = {
+  ambient: { color: 0xffffff, intensity: 0.5 },
+  hemi: { sky: 0xffffff, ground: 0xf0f0f0, intensity: 0.3 },
+  key: { color: 0xffffff, intensity: 1.0 },
+  fill: { color: 0xf8f8ff, intensity: 0.6 },
+  rim: { color: 0xffffff, intensity: 0.4 }
 };
 
 // Disco mode values
@@ -396,53 +396,19 @@ function applyWindWiggle(windSpeed) {
   });
 }
 
-// Weather-based lighting
-function applyWeatherLighting() {
-  if (isDarkMode || isPartyMode) return;
-
-  const { condition, cloudCover, isDay } = currentWeather;
-
-  // Base multiplier based on time of day
-  let dayMultiplier = isDay ? 1.0 : 0.3;
-
-  // Cloud cover dims the light
-  let cloudMultiplier = 1.0 - (cloudCover / 100) * 0.5;
-
-  // Condition-specific adjustments
-  let conditionColor = 0xffffff;
-  let conditionMultiplier = 1.0;
-
-  switch (condition) {
-    case 'rain':
-      conditionColor = 0xaabbcc; // Bluish tint
-      conditionMultiplier = 0.6;
-      break;
-    case 'clouds':
-      conditionColor = 0xdddddd;
-      conditionMultiplier = 0.8;
-      break;
-    case 'fog':
-      conditionColor = 0xcccccc;
-      conditionMultiplier = 0.5;
-      break;
-    case 'snow':
-      conditionColor = 0xeeeeff;
-      conditionMultiplier = 0.7;
-      break;
-    case 'clear':
-    default:
-      conditionColor = 0xffffff;
-      conditionMultiplier = 1.0;
-  }
-
-  const finalMultiplier = dayMultiplier * cloudMultiplier * conditionMultiplier;
-
-  ambient.intensity = baseLightValues.ambient.intensity * finalMultiplier;
-  hemiLight.intensity = baseLightValues.hemi.intensity * finalMultiplier;
-  keyLight.intensity = baseLightValues.key.intensity * finalMultiplier;
-  keyLight.color.setHex(conditionColor);
-  fillLight.intensity = baseLightValues.fill.intensity * finalMultiplier;
-  rimLight.intensity = baseLightValues.rim.intensity * finalMultiplier;
+// Restore studio lighting (after disco mode)
+function applyStudioLighting() {
+  ambient.color.setHex(studioLightValues.ambient.color);
+  ambient.intensity = studioLightValues.ambient.intensity;
+  hemiLight.color.setHex(studioLightValues.hemi.sky);
+  hemiLight.groundColor.setHex(studioLightValues.hemi.ground);
+  hemiLight.intensity = studioLightValues.hemi.intensity;
+  keyLight.color.setHex(studioLightValues.key.color);
+  keyLight.intensity = studioLightValues.key.intensity;
+  fillLight.color.setHex(studioLightValues.fill.color);
+  fillLight.intensity = studioLightValues.fill.intensity;
+  rimLight.color.setHex(studioLightValues.rim.color);
+  rimLight.intensity = studioLightValues.rim.intensity;
 }
 
 // Fetch Rotterdam weather from Open-Meteo (free, no API key)
@@ -482,8 +448,7 @@ async function fetchRotterdamWeather() {
 
     console.log('Rotterdam weather:', currentWeather);
 
-    // Apply weather effects
-    applyWeatherLighting();
+    // Apply precipitation (rain/snow) - lighting stays constant
     setRainVisible(condition === 'rain' || condition === 'snow');
 
   } catch (error) {
@@ -597,8 +562,8 @@ function togglePartyMode() {
       isDarkMode = false;
       document.body.classList.remove('dark-mode', 'party-mode');
       scene.background.setHex(lightModeBackground);
-      // Restore weather-based lighting
-      applyWeatherLighting();
+      // Restore studio lighting
+      applyStudioLighting();
       setRainVisible(currentWeather.condition === 'rain' || currentWeather.condition === 'snow');
     } else {
       isDarkMode = true;
