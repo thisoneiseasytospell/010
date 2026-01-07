@@ -329,10 +329,10 @@ function createPrecipitationSystem() {
 
   const precipMaterial = new THREE.PointsMaterial({
     color: 0xffffff,
-    size: 3,  // Screen pixels, not world units
+    size: 1.5,
     transparent: true,
-    opacity: 0.9,
-    sizeAttenuation: false  // Constant screen size
+    opacity: 0.85,
+    sizeAttenuation: false
   });
 
   precipitationParticles = new THREE.Points(precipitationGeometry, precipMaterial);
@@ -390,31 +390,40 @@ function updateSnowAccumulation() {
         }
       });
 
-      // Limit to ~500 particles, randomly sample if more
-      const maxSnow = 500;
-      let finalPositions;
-      if (snowPositions.length / 3 > maxSnow) {
-        finalPositions = new Float32Array(maxSnow * 3);
-        for (let i = 0; i < maxSnow; i++) {
-          const srcIdx = Math.floor(Math.random() * (snowPositions.length / 3)) * 3;
-          finalPositions[i * 3] = snowPositions[srcIdx] + (Math.random() - 0.5) * 0.1;
-          finalPositions[i * 3 + 1] = snowPositions[srcIdx + 1] + Math.random() * 0.05;
-          finalPositions[i * 3 + 2] = snowPositions[srcIdx + 2] + (Math.random() - 0.5) * 0.1;
+      // Create clumpy snow - cluster particles together
+      const maxSnow = 400;
+      const clumpedPositions = [];
+
+      // Pick random base points and cluster around them
+      const numClumps = Math.min(80, snowPositions.length / 9);
+      for (let c = 0; c < numClumps; c++) {
+        const srcIdx = Math.floor(Math.random() * (snowPositions.length / 3)) * 3;
+        const baseX = snowPositions[srcIdx];
+        const baseY = snowPositions[srcIdx + 1];
+        const baseZ = snowPositions[srcIdx + 2];
+
+        // Add 3-6 particles per clump
+        const clumpSize = 3 + Math.floor(Math.random() * 4);
+        for (let p = 0; p < clumpSize && clumpedPositions.length / 3 < maxSnow; p++) {
+          clumpedPositions.push(
+            baseX + (Math.random() - 0.5) * 0.08,
+            baseY + Math.random() * 0.03,
+            baseZ + (Math.random() - 0.5) * 0.08
+          );
         }
-      } else {
-        finalPositions = new Float32Array(snowPositions);
       }
 
-      if (finalPositions.length === 0) return;
+      if (clumpedPositions.length === 0) return;
 
+      const finalPositions = new Float32Array(clumpedPositions);
       const snowGeo = new THREE.BufferGeometry();
       snowGeo.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
 
       const snowMat = new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 2.5,
+        size: 1.2,
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.9,
         sizeAttenuation: false
       });
 
@@ -489,16 +498,16 @@ function setPrecipitation(type) {
   precipitationParticles.visible = true;
 
   if (type === 'snow') {
-    // Snow: white, larger, with accumulation
+    // Snow: white, small flakes
     precipitationParticles.material.color.setHex(0xffffff);
-    precipitationParticles.material.size = 3;
-    precipitationParticles.material.opacity = 0.9;
+    precipitationParticles.material.size = 1.5;
+    precipitationParticles.material.opacity = 0.85;
     updateSnowAccumulation();
   } else {
-    // Rain: bluish, smaller streaks
+    // Rain: bluish, thin streaks
     precipitationParticles.material.color.setHex(0x99aacc);
-    precipitationParticles.material.size = 2;
-    precipitationParticles.material.opacity = 0.7;
+    precipitationParticles.material.size = 1;
+    precipitationParticles.material.opacity = 0.6;
     hideSnowAccumulation();
   }
 }
