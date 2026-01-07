@@ -254,22 +254,22 @@ window.addEventListener('beforeunload', () => {
   dracoLoader.dispose();
 });
 
-// Lighting - Studio setup for ceramic look
-const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+// Lighting - Bright studio setup for ceramic look
+const ambient = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambient);
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf0f0f0, 0.3);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf5f5f5, 0.5);
 scene.add(hemiLight);
 
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
 keyLight.position.set(5, 8, 6);
 scene.add(keyLight);
 
-const fillLight = new THREE.DirectionalLight(0xf8f8ff, 0.6);
+const fillLight = new THREE.DirectionalLight(0xf8f8ff, 0.9);
 fillLight.position.set(-6, 4, 4);
 scene.add(fillLight);
 
-const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.6);
 rimLight.position.set(0, 2, -6);
 scene.add(rimLight);
 
@@ -278,13 +278,13 @@ let isDarkMode = false;
 const lightModeBackground = 0xf5f5f0;
 const darkModeBackground = 0x0a0a0a;
 
-// Studio light values (static, ceramic look)
+// Studio light values (bright, ceramic look)
 const studioLightValues = {
-  ambient: { color: 0xffffff, intensity: 0.5 },
-  hemi: { sky: 0xffffff, ground: 0xf0f0f0, intensity: 0.3 },
-  key: { color: 0xffffff, intensity: 1.0 },
-  fill: { color: 0xf8f8ff, intensity: 0.6 },
-  rim: { color: 0xffffff, intensity: 0.4 }
+  ambient: { color: 0xffffff, intensity: 0.8 },
+  hemi: { sky: 0xffffff, ground: 0xf5f5f5, intensity: 0.5 },
+  key: { color: 0xffffff, intensity: 1.4 },
+  fill: { color: 0xf8f8ff, intensity: 0.9 },
+  rim: { color: 0xffffff, intensity: 0.6 }
 };
 
 // Disco mode values
@@ -367,32 +367,26 @@ function setRainVisible(visible) {
   }
 }
 
-// Wind wiggle effect
+// Wind wiggle effect - works in all modes
 let windTime = 0;
 function applyWindWiggle(windSpeed) {
-  if (isPartyMode) return; // Don't wiggle in party mode
-
   windTime += 0.016; // ~60fps
-  const wiggleStrength = Math.min(windSpeed / 20, 1) * 0.05; // Max wiggle at 20 m/s
+  const wiggleStrength = Math.min(windSpeed / 20, 1) * 0.03; // Subtle wiggle
 
   sceneModels.forEach((model, index) => {
-    if (!model || !model.object) return;
+    if (!model || !model.object || !model.object.visible) return;
     const innerObj = model.object.userData.innerObject;
     if (!innerObj) return;
+
+    // Skip during grid intro animation
+    if (model.object.userData.gridIntroAnimating) return;
 
     // Each model wiggles slightly differently
     const offset = index * 0.5;
     const wiggle = Math.sin(windTime * 2 + offset) * wiggleStrength;
 
-    // Store original rotation if not stored
-    if (model.object.userData.windWiggleBase === undefined) {
-      model.object.userData.windWiggleBase = innerObj.rotation.z;
-    }
-
-    // Only apply in grid mode, not during transitions
-    if (isGridMode && !model.object.userData.gridIntroAnimating) {
-      innerObj.rotation.z = model.object.userData.windWiggleBase + wiggle;
-    }
+    // Apply wiggle to Z rotation
+    innerObj.rotation.z += wiggle * 0.1; // Additive, subtle
   });
 }
 
