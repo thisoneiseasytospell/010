@@ -341,42 +341,78 @@ function createPrecipitationSystem() {
   scene.add(precipitationParticles);
 }
 
-// Update snow accumulation on models
+// Update snow accumulation on models - sample actual geometry vertices
 function updateSnowAccumulation() {
   if (currentPrecipType !== 'snow') return;
 
   sceneModels.forEach((model) => {
     if (!model || !model.object) return;
 
-    // Add snow particles on top of each model
+    // Add snow particles on top-facing surfaces
     if (!model.object.userData.snowParticles) {
-      const snowGeo = new THREE.BufferGeometry();
-      const snowCount = 300;
-      const positions = new Float32Array(snowCount * 3);
+      const snowPositions = [];
 
-      // Get model bounds
-      model.object.updateMatrixWorld(true);
-      const bbox = new THREE.Box3().setFromObject(model.object);
-      const size = new THREE.Vector3();
-      const center = new THREE.Vector3();
-      bbox.getSize(size);
-      bbox.getCenter(center);
+      // Collect top-facing vertices from all meshes
+      model.object.traverse((child) => {
+        if (child.isMesh && child.geometry) {
+          const geo = child.geometry;
+          const pos = geo.attributes.position;
+          const normal = geo.attributes.normal;
 
-      // Local coordinates relative to model
-      const localTop = bbox.max.y - model.object.position.y;
+          if (!pos) return;
 
-      for (let i = 0; i < snowCount; i++) {
-        // Place on top surface of model with some depth variation
-        positions[i * 3] = (Math.random() - 0.5) * size.x * 1.2;
-        positions[i * 3 + 1] = localTop + Math.random() * 0.2 - 0.1;
-        positions[i * 3 + 2] = (Math.random() - 0.5) * size.z * 1.2 + 0.5;
+          // Get world matrix for this mesh
+          child.updateMatrixWorld(true);
+          const matrix = child.matrixWorld;
+
+          // Sample vertices that face upward
+          for (let i = 0; i < pos.count; i += 3) { // Sample every 3rd vertex
+            const localPos = new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i));
+            const worldPos = localPos.applyMatrix4(matrix);
+
+            // Check if normal faces up (if normals exist)
+            let facesUp = true;
+            if (normal) {
+              const n = new THREE.Vector3(normal.getX(i), normal.getY(i), normal.getZ(i));
+              n.transformDirection(matrix);
+              facesUp = n.y > 0.3; // Faces somewhat upward
+            }
+
+            if (facesUp) {
+              // Add slight offset above surface
+              snowPositions.push(
+                worldPos.x - model.object.position.x,
+                worldPos.y - model.object.position.y + 0.05,
+                worldPos.z - model.object.position.z + 0.3
+              );
+            }
+          }
+        }
+      });
+
+      // Limit to ~500 particles, randomly sample if more
+      const maxSnow = 500;
+      let finalPositions;
+      if (snowPositions.length / 3 > maxSnow) {
+        finalPositions = new Float32Array(maxSnow * 3);
+        for (let i = 0; i < maxSnow; i++) {
+          const srcIdx = Math.floor(Math.random() * (snowPositions.length / 3)) * 3;
+          finalPositions[i * 3] = snowPositions[srcIdx] + (Math.random() - 0.5) * 0.1;
+          finalPositions[i * 3 + 1] = snowPositions[srcIdx + 1] + Math.random() * 0.05;
+          finalPositions[i * 3 + 2] = snowPositions[srcIdx + 2] + (Math.random() - 0.5) * 0.1;
+        }
+      } else {
+        finalPositions = new Float32Array(snowPositions);
       }
 
-      snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      if (finalPositions.length === 0) return;
+
+      const snowGeo = new THREE.BufferGeometry();
+      snowGeo.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
 
       const snowMat = new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 2,
+        size: 2.5,
         transparent: true,
         opacity: 0.95,
         sizeAttenuation: false
@@ -388,7 +424,9 @@ function updateSnowAccumulation() {
       model.object.userData.snowParticles = snowPoints;
     }
 
-    model.object.userData.snowParticles.visible = model.object.visible;
+    if (model.object.userData.snowParticles) {
+      model.object.userData.snowParticles.visible = model.object.visible;
+    }
   });
 }
 
@@ -400,97 +438,6 @@ function hideSnowAccumulation() {
   });
 }
 
-// Window frame snow (CSS overlay)
-let windowSnowElement = null;
-function createWindowSnow() {
-  windowSnowElement = document.createElement('div');
-  windowSnowElement.id = 'window-snow';
-  windowSnowElement.innerHTML = `
-    <div class="snow-edge snow-top"></div>
-    <div class="snow-edge snow-bottom"></div>
-    <div class="snow-edge snow-left"></div>
-    <div class="snow-edge snow-right"></div>
-  `;
-  document.body.appendChild(windowSnowElement);
-
-  // Add styles
-  const style = document.createElement('style');
-  style.textContent = `
-    #window-snow {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      z-index: 9999;
-      display: none;
-    }
-    #window-snow.visible {
-      display: block;
-    }
-    .snow-edge {
-      position: absolute;
-      background: linear-gradient(to bottom,
-        rgba(255,255,255,0.95) 0%,
-        rgba(255,255,255,0.8) 30%,
-        rgba(255,255,255,0.4) 60%,
-        rgba(255,255,255,0) 100%
-      );
-    }
-    .snow-top {
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 15px;
-    }
-    .snow-bottom {
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 25px;
-      background: linear-gradient(to top,
-        rgba(255,255,255,0.95) 0%,
-        rgba(255,255,255,0.7) 40%,
-        rgba(255,255,255,0.3) 70%,
-        rgba(255,255,255,0) 100%
-      );
-    }
-    .snow-left {
-      top: 0;
-      left: 0;
-      bottom: 0;
-      width: 10px;
-      background: linear-gradient(to right,
-        rgba(255,255,255,0.9) 0%,
-        rgba(255,255,255,0.5) 50%,
-        rgba(255,255,255,0) 100%
-      );
-    }
-    .snow-right {
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 10px;
-      background: linear-gradient(to left,
-        rgba(255,255,255,0.9) 0%,
-        rgba(255,255,255,0.5) 50%,
-        rgba(255,255,255,0) 100%
-      );
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function showWindowSnow() {
-  if (windowSnowElement) windowSnowElement.classList.add('visible');
-}
-
-function hideWindowSnow() {
-  if (windowSnowElement) windowSnowElement.classList.remove('visible');
-}
-
-createWindowSnow();
 
 function updatePrecipitation(windSpeed, isSnow) {
   if (!precipitationParticles || !precipitationParticles.visible) return;
@@ -536,7 +483,6 @@ function setPrecipitation(type) {
   if (type === 'none') {
     precipitationParticles.visible = false;
     hideSnowAccumulation();
-    hideWindowSnow();
     return;
   }
 
@@ -548,14 +494,12 @@ function setPrecipitation(type) {
     precipitationParticles.material.size = 3;
     precipitationParticles.material.opacity = 0.9;
     updateSnowAccumulation();
-    showWindowSnow();
   } else {
     // Rain: bluish, smaller streaks
     precipitationParticles.material.color.setHex(0x99aacc);
     precipitationParticles.material.size = 2;
     precipitationParticles.material.opacity = 0.7;
     hideSnowAccumulation();
-    hideWindowSnow();
   }
 }
 
