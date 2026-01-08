@@ -198,7 +198,7 @@ function snapToNearestModel() {
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf5f5f0);
+scene.background = new THREE.Color(0xf7f6f3);
 
 // Camera
 const aspect = window.innerWidth / window.innerHeight;
@@ -276,7 +276,7 @@ scene.add(rimLight);
 
 // Dark mode
 let isDarkMode = false;
-const lightModeBackground = 0xf5f5f0;
+const lightModeBackground = 0xf7f6f3;
 const darkModeBackground = 0x0a0a0a;
 
 // Studio light values (bright, ceramic look)
@@ -504,7 +504,7 @@ function togglePartyMode() {
       document.body.classList.remove('dark-mode', 'party-mode');
       scene.background.setHex(lightModeBackground);
       // Update Safari bar color
-      if (themeColorMeta) themeColorMeta.content = '#f5f5f0';
+      if (themeColorMeta) themeColorMeta.content = '#f7f6f3';
       // Restore studio lighting
       applyStudioLighting();
       // Restore precipitation

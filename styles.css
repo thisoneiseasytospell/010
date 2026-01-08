@@ -20,7 +20,7 @@ html, body {
   padding: 0;
   width: 100%;
   min-height: 100%;
-  background: #f5f5f0; /* Match Three.js scene background */
+  background: #f7f6f3;
   color: var(--text);
   overscroll-behavior: none;
   transition: background 0.4s ease;
@@ -50,11 +50,21 @@ body:not(.intro-active) {
 }
 
 #scene-container {
-  position: relative;
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100vh;
   height: 100dvh;
   cursor: default;
+  z-index: 0;
+}
+
+/* Spacer to push text section down */
+#scene-container + #ui-overlay + #mobile-header + #model-dropdown + #solo-info-panel + #model-list + #grid-mode-icon + #text-section,
+#text-section {
+  margin-top: 100vh;
+  margin-top: 100dvh;
 }
 
 #intro-overlay {
@@ -517,14 +527,14 @@ body:not(.intro-active) {
   position: relative;
   width: 100%;
   min-height: 100vh;
-  background: #f5f5f0;
+  background: transparent;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
   padding: 6rem 2rem 2rem;
   box-sizing: border-box;
-  transition: background 0.4s ease;
+  z-index: 1;
 }
 
 #text-content {
@@ -653,7 +663,7 @@ body.dark-mode .dropdown-info-btn {
 }
 
 body.dark-mode #text-section {
-  background: #0a0a0a;
+  background: transparent;
 }
 
 body.dark-mode .text-line {
