@@ -3,7 +3,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType, clearSnowAccumulation } from './snow.js';
+import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType, clearSnowAccumulation, syncSnowVisibility } from './snow.js';
 
 const container = document.querySelector('#scene-container');
 const introOverlay = document.getElementById('intro-overlay');
@@ -1045,6 +1045,7 @@ function switchToModel(index) {
         }
       }
     });
+    syncSnowVisibility();
   }
 
   updateModelInfoDisplay();
@@ -1090,6 +1091,7 @@ function toggleMode() {
   updateModelInfoDisplay();
   updateHeaderVisibility();
   updateModelListVisibility();
+  syncSnowVisibility();
 }
 
 function updateModeIcon() {
@@ -2182,20 +2184,32 @@ function updateSoloInfoState() {
 let lastPageScrollY = 0;
 
 // Scroll listener for header and solo info state
+let scrollThrottleTimer = null;
 window.addEventListener('scroll', () => {
-  updateHeaderVisibility();
-  updateSoloInfoState();
-  updateModelListState();
+  // Throttle scroll handler to reduce jank
+  if (scrollThrottleTimer) return;
+  scrollThrottleTimer = setTimeout(() => {
+    scrollThrottleTimer = null;
+  }, 16); // ~60fps
+
+  const isMobile = window.innerWidth <= 900;
+
+  // Desktop-only updates (these do getBoundingClientRect which is expensive)
+  if (!isMobile) {
+    updateHeaderVisibility();
+    updateSoloInfoState();
+    updateModelListState();
+  }
 
   // On mobile, detect scroll back to top from text section
-  const config = getGridConfig();
-  if (config.isMobileScroll && isGridMode) {
+  if (isMobile && isGridMode) {
     const currentScroll = window.scrollY;
     const sceneHeight = window.innerHeight;
 
     // If scrolling up while in text section area, check if we should go back to models
     if (currentScroll < sceneHeight * 0.3 && lastPageScrollY > currentScroll && mobileCurrentModelIndex >= models.length) {
       // User scrolled back up - reset to last model
+      const config = getGridConfig();
       mobileScrollTarget = (models.length - 1) * config.cellHeight;
       mobileCurrentModelIndex = models.length - 1;
       updateModelInfoDisplay();
@@ -2203,7 +2217,7 @@ window.addEventListener('scroll', () => {
 
     lastPageScrollY = currentScroll;
   }
-});
+}, { passive: true });
 loadTextContent();
 
 // Visibility handling - pause rendering when tab is hidden or models not in viewport

@@ -22,7 +22,6 @@ export function initSnow(sceneRef, cameraRef, modelsRef) {
   camera = cameraRef;
   sceneModels = modelsRef;
   createSnowSystem();
-  createTextSnow();
 }
 
 function createSnowSystem() {
@@ -64,78 +63,6 @@ function createSnowSystem() {
   snowParticles.visible = false;
   snowParticles.renderOrder = 999;
   scene.add(snowParticles);
-}
-
-// CSS snow for text section
-let textSnowElement = null;
-function createTextSnow() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .text-snow-container {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 40vh;
-      pointer-events: none;
-      overflow: hidden;
-      z-index: 100;
-      display: none;
-    }
-    .text-snow-container.visible {
-      display: block;
-    }
-    .text-snowflake {
-      position: absolute;
-      width: 4px;
-      height: 4px;
-      background: white;
-      border-radius: 50%;
-      opacity: 0;
-      animation: textSnowFall linear infinite;
-    }
-    @keyframes textSnowFall {
-      0% {
-        opacity: 0;
-        transform: translateY(-20px) rotate(0deg);
-      }
-      10% {
-        opacity: 0.8;
-      }
-      90% {
-        opacity: 0.6;
-      }
-      100% {
-        opacity: 0;
-        transform: translateY(40vh) rotate(360deg);
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  textSnowElement = document.createElement('div');
-  textSnowElement.className = 'text-snow-container';
-
-  // Create varied snowflakes
-  for (let i = 0; i < 80; i++) {
-    const flake = document.createElement('div');
-    flake.className = 'text-snowflake';
-    const size = 2 + Math.random() * 4;
-    const left = Math.random() * 100;
-    const delay = Math.random() * 8;
-    const duration = 4 + Math.random() * 6;
-
-    flake.style.cssText = `
-      left: ${left}%;
-      width: ${size}px;
-      height: ${size}px;
-      animation-duration: ${duration}s;
-      animation-delay: ${delay}s;
-    `;
-    textSnowElement.appendChild(flake);
-  }
-
-  document.body.appendChild(textSnowElement);
 }
 
 // Update snow accumulation on models by sampling top-facing surfaces
@@ -309,6 +236,18 @@ export function hideSnowAccumulation() {
   });
 }
 
+// Sync snow visibility with model visibility (call when switching modes)
+export function syncSnowVisibility() {
+  if (currentPrecipType !== 'snow' || !sceneModels) return;
+  sceneModels.forEach((model) => {
+    if (!model?.object) return;
+    const innerObj = model.object.userData?.innerObject;
+    if (innerObj?.userData?.snowParticles) {
+      innerObj.userData.snowParticles.visible = model.object.visible;
+    }
+  });
+}
+
 // Clear all snow accumulation to force recalculation
 export function clearSnowAccumulation() {
   if (!sceneModels) return;
@@ -378,7 +317,6 @@ export function setPrecipitation(type) {
   if (type === 'none') {
     snowParticles.visible = false;
     hideSnowAccumulation();
-    if (textSnowElement) textSnowElement.classList.remove('visible');
     return;
   }
 
@@ -389,13 +327,12 @@ export function setPrecipitation(type) {
     snowParticles.material.size = isMobile ? 3 : 2;
     snowParticles.material.opacity = 0.9;
     updateSnowAccumulation();
-    if (textSnowElement) textSnowElement.classList.add('visible');
   } else {
+    // Rain
     snowParticles.material.color.setHex(0x99aacc);
     snowParticles.material.size = isMobile ? 2 : 1.5;
     snowParticles.material.opacity = 0.6;
     hideSnowAccumulation();
-    if (textSnowElement) textSnowElement.classList.remove('visible');
   }
 }
 
