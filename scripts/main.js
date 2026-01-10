@@ -2224,24 +2224,6 @@ window.addEventListener('scroll', () => {
     updateHeaderVisibility();
     updateSoloInfoState();
     updateModelListState();
-
-    // Fade out scene when scrolling to text section
-    const scrollY = window.scrollY;
-    const viewportHeight = window.innerHeight;
-    const fadeStart = viewportHeight * 0.3;
-    const fadeEnd = viewportHeight * 0.8;
-
-    if (scrollY <= fadeStart) {
-      container.style.opacity = '1';
-      container.style.pointerEvents = 'auto';
-    } else if (scrollY >= fadeEnd) {
-      container.style.opacity = '0';
-      container.style.pointerEvents = 'none';
-    } else {
-      const progress = (scrollY - fadeStart) / (fadeEnd - fadeStart);
-      container.style.opacity = String(1 - progress);
-      container.style.pointerEvents = 'auto';
-    }
   }
 
   // On mobile, detect scroll back to top from text section
