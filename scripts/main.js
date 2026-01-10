@@ -476,6 +476,7 @@ function startPartyMode() {
   partyStartTime = Date.now();
 
   document.body.classList.add('dark-mode', 'party-mode');
+  document.documentElement.classList.add('dark-mode');
   scene.background.setHex(darkModeBackground);
 
   animateParty();
@@ -502,6 +503,7 @@ function togglePartyMode() {
       stopPartyMode();
       isDarkMode = false;
       document.body.classList.remove('dark-mode', 'party-mode');
+      document.documentElement.classList.remove('dark-mode');
       scene.background.setHex(lightModeBackground);
       // Update Safari bar color
       if (themeColorMeta) themeColorMeta.content = '#f7f6f3';
@@ -518,6 +520,7 @@ function togglePartyMode() {
     } else {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
+      document.documentElement.classList.add('dark-mode');
       scene.background.setHex(darkModeBackground);
       // Update Safari bar color to black
       if (themeColorMeta) themeColorMeta.content = '#0a0a0a';
@@ -929,8 +932,30 @@ function onTouchEnd(event) {
 
     // On mobile scroll, tap on model goes to solo mode
     if (config.isMobileScroll && isGridMode) {
+      // Use raycasting to find which model was actually tapped
+      raycaster.setFromCamera(mouse, camera);
+      const modelObjects = sceneModels
+        .map((entry) => entry?.object)
+        .filter((object) => object && object.visible);
+
+      if (modelObjects.length > 0) {
+        const intersections = raycaster.intersectObjects(modelObjects, true);
+        if (intersections.length > 0) {
+          let target = intersections[0].object;
+          while (target && target.userData?.modelIndex === undefined && target.parent) {
+            target = target.parent;
+          }
+
+          if (target && typeof target.userData?.modelIndex === 'number') {
+            currentModelIndex = target.userData.modelIndex;
+            toggleMode(); // Enter solo mode with tapped model
+            return;
+          }
+        }
+      }
+      // Fallback to centered model if no hit
       currentModelIndex = mobileCurrentModelIndex;
-      toggleMode(); // Enter solo mode
+      toggleMode();
       return;
     }
 
