@@ -2277,9 +2277,10 @@ function animate() {
 
   animationFrameId = requestAnimationFrame(animate);
 
-  // Check if scene is visible and throttle if not
+  // Check if scene is visible and throttle if not (but keep snow running in disco mode)
   isSceneVisible = checkSceneVisibility();
-  if (!isSceneVisible) {
+  const keepSnowRunning = isPartyMode && getCurrentPrecipType() === 'snow';
+  if (!isSceneVisible && !keepSnowRunning) {
     const now = performance.now();
     if (now - lastFrameTime < THROTTLED_FRAME_INTERVAL) {
       return; // Skip this frame
