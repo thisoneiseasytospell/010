@@ -60,6 +60,7 @@ body:not(.intro-active) {
   height: 100%;
   cursor: default;
   z-index: 0;
+  transition: opacity 0.15s ease-out;
 }
 
 /* Spacer to push text section down */
