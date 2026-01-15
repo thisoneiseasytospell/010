@@ -3,7 +3,7 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
-import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType, clearSnowAccumulation, syncSnowVisibility } from './snow.js';
+import { initSnow, updatePrecipitation, setPrecipitation, getCurrentPrecipType, clearSnowAccumulation, syncSnowVisibility, prewarmSnow, prewarmSnowAccumulation } from './snow.js';
 
 const container = document.querySelector('#scene-container');
 const introOverlay = document.getElementById('intro-overlay');
@@ -18,6 +18,7 @@ const soloInfoBody = document.getElementById('solo-info-body');
 const mobileHeader = document.getElementById('mobile-header');
 const modelSelectorBtn = document.getElementById('model-selector-btn');
 const currentModelNameEl = document.getElementById('current-model-name');
+const mobileGoTop = document.getElementById('mobile-go-top');
 const modelDropdown = document.getElementById('model-dropdown');
 const modelDropdownList = document.getElementById('model-dropdown-list');
 const modelDropdownInfo = document.getElementById('model-dropdown-info');
@@ -276,6 +277,7 @@ scene.add(rimLight);
 
 // Dark mode
 let isDarkMode = false;
+let isPartyMode = false;
 const lightModeBackground = 0xf7f6f3;
 const darkModeBackground = 0x0a0a0a;
 
@@ -305,6 +307,7 @@ let currentWeather = {
   cloudCover: 0, // 0-100
   isDay: true
 };
+let snowPrewarmScheduled = false;
 
 
 // Wind wiggle effect - works in all modes
@@ -382,6 +385,8 @@ async function fetchRotterdamWeather() {
 
     console.log('Rotterdam weather:', currentWeather);
 
+    if (isPartyMode) return;
+
     // Apply precipitation (rain/snow) - lighting stays constant
     if (condition === 'snow') {
       setPrecipitation('snow');
@@ -394,6 +399,23 @@ async function fetchRotterdamWeather() {
   } catch (error) {
     console.warn('Could not fetch weather:', error);
     // Use defaults
+  }
+}
+
+function scheduleSnowPrewarm() {
+  if (snowPrewarmScheduled) return;
+  snowPrewarmScheduled = true;
+  const run = () => prewarmSnow(renderer);
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(run, { timeout: 1200 });
+  } else {
+    setTimeout(run, 300);
+  }
+  const accumulationRun = () => prewarmSnowAccumulation();
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(accumulationRun, { timeout: 1500 });
+  } else {
+    setTimeout(accumulationRun, 600);
   }
 }
 
@@ -459,7 +481,6 @@ function applyLightingMode(values) {
 }
 
 // PARTY MODE 🎉
-let isPartyMode = false;
 let partyAnimationId = null;
 let partyStartTime = 0;
 let partyToggleCooldown = false;
@@ -1545,6 +1566,7 @@ function checkLoadingComplete() {
   if (!hasCompletedInitialLoad && totalAssetsToLoad > 0 && modelsLoaded >= totalAssetsToLoad) {
     hasCompletedInitialLoad = true;
     prewarmGridModels();
+    scheduleSnowPrewarm();
     // Show intro prompt only after loading is complete
     if (introPrompt && introActive) {
       introPrompt.textContent = isTouchDevice ? 'TAP TO ENTER' : 'CLICK TO ENTER';
@@ -1556,20 +1578,10 @@ function checkLoadingComplete() {
 function prewarmGridModels() {
   if (!renderer) return;
 
-  const visibility = sceneModels.map((model) => model?.object?.visible ?? false);
-
-  sceneModels.forEach((model) => {
-    if (model?.object) model.object.visible = true;
-  });
-
+  // Compile shaders for all models
   if (typeof renderer.compile === 'function') {
     renderer.compile(scene, camera);
   }
-  renderer.render(scene, camera);
-
-  sceneModels.forEach((model, index) => {
-    if (model?.object) model.object.visible = visibility[index];
-  });
 }
 
 function showLoadingError(message) {
@@ -1586,15 +1598,41 @@ function splitPath(path) {
   };
 }
 
+// Limit texture size to reduce GPU memory
+const MAX_TEXTURE_SIZE = 1024;
+function limitTextureSize(texture) {
+  if (!texture || !texture.image) return;
+  const img = texture.image;
+  if (img.width <= MAX_TEXTURE_SIZE && img.height <= MAX_TEXTURE_SIZE) return;
+
+  // Create canvas to downscale
+  const canvas = document.createElement('canvas');
+  const scale = MAX_TEXTURE_SIZE / Math.max(img.width, img.height);
+  canvas.width = Math.floor(img.width * scale);
+  canvas.height = Math.floor(img.height * scale);
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  texture.image = canvas;
+  texture.needsUpdate = true;
+}
+
 // Process and add model to scene (unified - single model per config)
 function processSceneModel(object3d, modelConfig, modelIndex) {
-  // Setup materials
+  // Setup materials and optimize textures
   object3d.traverse((child) => {
     if (child.isMesh) {
       const materials = Array.isArray(child.material) ? child.material : [child.material];
       materials.forEach((material) => {
         if (!material) return;
         material.flatShading = false;
+
+        // Limit texture sizes to reduce memory
+        if (material.map) limitTextureSize(material.map);
+        if (material.normalMap) limitTextureSize(material.normalMap);
+        if (material.roughnessMap) limitTextureSize(material.roughnessMap);
+        if (material.metalnessMap) limitTextureSize(material.metalnessMap);
 
         const hasPBRMaps = material.map || material.normalMap || material.roughnessMap || material.metalnessMap || material.transmissionMap || material.clearcoatMap;
         const usesTransmission = material.transmission !== undefined && material.transmission > 0;
@@ -1863,82 +1901,158 @@ async function loadTextContent() {
     if (!response.ok) throw new Error('Failed to load text.txt');
     const text = await response.text();
 
-    // Split into lines - each line becomes its own element
+    // Split into lines
     const lines = text.split('\n');
+    let wordIndex = 0;
 
-    lines.forEach((line, index) => {
+    lines.forEach((line, lineIndex) => {
       const p = document.createElement('p');
       p.className = 'text-line';
-      p.dataset.index = index;
+      p.dataset.lineIndex = lineIndex;
 
       if (line.trim() === '') {
         // Empty line becomes a spacer
         p.innerHTML = '&nbsp;';
         p.classList.add('spacer');
       } else {
-        // Parse **bold** text
+        // Parse **bold** and wrap each word in a span
         const parsedLine = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        p.innerHTML = parsedLine;
+        // Split by spaces but keep HTML tags intact
+        const words = parsedLine.split(/(\s+)/);
+
+        words.forEach((word) => {
+          if (word.trim() === '') {
+            // Keep whitespace
+            p.appendChild(document.createTextNode(word));
+          } else {
+            const span = document.createElement('span');
+            span.className = 'text-word';
+            span.dataset.index = wordIndex++;
+            span.innerHTML = word;
+            p.appendChild(span);
+          }
+        });
       }
 
       textContent.appendChild(p);
     });
 
-    // Setup intersection observer for blur reveal
-    setupBlurReveal();
+    // Setup intersection observer for word-by-word reveal
+    setupWordReveal();
   } catch (error) {
     console.warn('Could not load text.txt:', error);
   }
 }
 
-let revealQueue = [];
-let isRevealing = false;
+// Word reveal/hide queues
+const wordRevealQueue = [];
+const wordHideQueue = [];
+let isProcessingWords = false;
+let isProcessingHide = false;
+let lastScrollY = 0;
+let scrollDirection = 'down'; // 'down' or 'up'
 
-function setupBlurReveal() {
+// Track scroll direction
+window.addEventListener('scroll', () => {
+  scrollDirection = window.scrollY > lastScrollY ? 'down' : 'up';
+  lastScrollY = window.scrollY;
+}, { passive: true });
+
+function processWordQueue() {
+  if (isProcessingWords || wordRevealQueue.length === 0) return;
+
+  isProcessingWords = true;
+
+  // Reveal 12 words at once
+  for (let i = 0; i < 12 && wordRevealQueue.length > 0; i++) {
+    const word = wordRevealQueue.shift();
+    if (word && word.classList.contains('word-pending')) {
+      word.classList.remove('word-pending');
+      word.classList.add('word-revealed');
+    }
+  }
+
+  // Delay before next batch
+  setTimeout(() => {
+    isProcessingWords = false;
+    processWordQueue();
+  }, 60);
+}
+
+function processHideQueue() {
+  if (isProcessingHide || wordHideQueue.length === 0) return;
+
+  isProcessingHide = true;
+
+  // Hide 12 words at once (from end - reverse order)
+  for (let i = 0; i < 12 && wordHideQueue.length > 0; i++) {
+    const word = wordHideQueue.pop(); // pop from end for reverse
+    if (word) {
+      word.classList.remove('word-pending', 'word-revealed');
+    }
+  }
+
+  // Delay before next batch
+  setTimeout(() => {
+    isProcessingHide = false;
+    processHideQueue();
+  }, 60);
+}
+
+function setupWordReveal() {
   const textLines = document.querySelectorAll('.text-line');
 
   const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting && !entry.target.classList.contains('revealed')) {
-        // Add to queue for staggered reveal
-        if (!revealQueue.includes(entry.target)) {
-          revealQueue.push(entry.target);
-        }
-        processRevealQueue();
-      } else if (!entry.isIntersecting && entry.target.classList.contains('revealed')) {
-        // Blur back when scrolling out of view
-        entry.target.classList.remove('revealed');
-        // Remove from queue if it was waiting
-        const queueIndex = revealQueue.indexOf(entry.target);
-        if (queueIndex > -1) {
-          revealQueue.splice(queueIndex, 1);
-        }
+    entries.forEach((entry) => {
+      const line = entry.target;
+
+      if (entry.isIntersecting && !line.classList.contains('line-revealed')) {
+        line.classList.add('line-revealed');
+
+        // Remove from hide queue if it was being hidden
+        const words = Array.from(line.querySelectorAll('.text-word'));
+        words.forEach((word) => {
+          const hideIdx = wordHideQueue.indexOf(word);
+          if (hideIdx > -1) wordHideQueue.splice(hideIdx, 1);
+        });
+
+        // Add words to reveal queue - reverse order if scrolling up
+        const wordsToAdd = scrollDirection === 'up' ? [...words].reverse() : words;
+        wordsToAdd.forEach((word) => {
+          if (!word.classList.contains('word-revealed') && !word.classList.contains('word-pending')) {
+            word.classList.add('word-pending');
+            wordRevealQueue.push(word);
+          }
+        });
+        processWordQueue();
+
+      } else if (!entry.isIntersecting && line.classList.contains('line-revealed')) {
+        // Line left viewport - queue words for hiding (reverse order)
+        line.classList.remove('line-revealed');
+        const words = Array.from(line.querySelectorAll('.text-word'));
+
+        // Remove from reveal queue
+        words.forEach((word) => {
+          word.classList.remove('word-pending');
+          const idx = wordRevealQueue.indexOf(word);
+          if (idx > -1) wordRevealQueue.splice(idx, 1);
+        });
+
+        // Add revealed words to hide queue (they'll be popped from end)
+        words.forEach((word) => {
+          if (word.classList.contains('word-revealed')) {
+            wordHideQueue.push(word);
+          }
+        });
+        processHideQueue();
       }
     });
   }, {
-    threshold: 0.1,
-    rootMargin: '50px 0px -50px 0px'
+    threshold: 0.2,
+    rootMargin: '0px 0px -30px 0px'
   });
 
   textLines.forEach(line => observer.observe(line));
-}
-
-function processRevealQueue() {
-  if (isRevealing || revealQueue.length === 0) return;
-
-  isRevealing = true;
-
-  // Sort by index to reveal in order
-  revealQueue.sort((a, b) => parseInt(a.dataset.index) - parseInt(b.dataset.index));
-
-  const element = revealQueue.shift();
-  element.classList.add('revealed');
-
-  // Delay before revealing next line
-  setTimeout(() => {
-    isRevealing = false;
-    processRevealQueue();
-  }, 60);
 }
 
 // Solo mode go to top
@@ -1956,6 +2070,31 @@ if (modelListGoTop) {
     e.stopPropagation();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+}
+
+// Mobile go to top
+if (mobileGoTop) {
+  mobileGoTop.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+// Update mobile go-to-top visibility based on scroll
+function updateMobileGoTopVisibility() {
+  if (!mobileGoTop || !modelSelectorBtn) return;
+
+  const textSection = document.getElementById('text-section');
+  if (!textSection) return;
+
+  const textRect = textSection.getBoundingClientRect();
+  const isInTextSection = textRect.top < window.innerHeight * 0.5;
+
+  if (isInTextSection) {
+    mobileGoTop.classList.add('visible');
+  } else {
+    mobileGoTop.classList.remove('visible');
+  }
 }
 
 // Populate model list (desktop sidebar)
@@ -2072,12 +2211,28 @@ if (modelList) {
 
 function updateModelListVisibility() {
   if (!modelList) return;
-  // Show in solo mode on desktop
   const isDesktop = window.innerWidth > 900;
-  if (!isGridMode && !introActive && isDesktop) {
+  const isScrolledDown = window.scrollY > 100;
+
+  // Show in solo mode OR when scrolled down (for go-to-top in grid mode)
+  if (!introActive && isDesktop && (!isGridMode || isScrolledDown)) {
     modelList.classList.add('visible');
   } else {
     modelList.classList.remove('visible');
+  }
+
+  // In grid mode, always hide menu items (only go-to-top shows when scrolled)
+  if (isGridMode && modelListItems) {
+    const items = modelListItems.querySelectorAll('.model-list-item');
+    items.forEach(item => item.classList.add('blurring-out'));
+    modelListShowingGoTop = true;
+  }
+
+  // In solo mode at top, show menu items
+  if (!isGridMode && !isScrolledDown && modelListItems) {
+    const items = modelListItems.querySelectorAll('.model-list-item');
+    items.forEach(item => item.classList.remove('blurring-out'));
+    modelListShowingGoTop = false;
   }
 }
 
@@ -2118,9 +2273,6 @@ function blurOutModelListItems() {
   clearModelListAnimations();
   modelListShowingGoTop = true;
 
-  // Hide go-to-top immediately in case it's visible
-  modelListGoTop?.classList.remove('visible');
-
   const items = modelListItems.querySelectorAll('.model-list-item');
   const activeIndex = currentModelIndex;
 
@@ -2138,21 +2290,36 @@ function blurOutModelListItems() {
     }, i * 40);
     modelListAnimationTimeouts.push(id);
   });
+}
 
-  // After all items blur out, show go-to-top
-  const finalId = setTimeout(() => {
-    modelListGoTop?.classList.add('visible');
-  }, sortedItems.length * 40 + 100);
-  modelListAnimationTimeouts.push(finalId);
+// Show go-to-top when scrolled down (both grid and solo mode)
+function updateGoTopVisibility() {
+  if (!modelListGoTop || introActive) {
+    modelListGoTop?.classList.remove('visible');
+    return;
+  }
+
+  const isScrolledDown = window.scrollY > 100;
+
+  if (isScrolledDown) {
+    modelListGoTop.classList.add('visible');
+    // In solo mode, blur out menu items when go-to-top shows
+    if (!isGridMode && !modelListShowingGoTop && modelListItems) {
+      blurOutModelListItems();
+    }
+  } else {
+    modelListGoTop.classList.remove('visible');
+    // In solo mode, show menu items when go-to-top hides
+    if (!isGridMode && modelListShowingGoTop && modelListItems) {
+      showModelListItems();
+    }
+  }
 }
 
 function showModelListItems() {
   // Cancel any pending animations
   clearModelListAnimations();
   modelListShowingGoTop = false;
-
-  // Hide go-to-top immediately
-  modelListGoTop?.classList.remove('visible');
 
   const items = modelListItems.querySelectorAll('.model-list-item');
   const activeIndex = currentModelIndex;
@@ -2221,26 +2388,32 @@ window.addEventListener('scroll', () => {
 
   // Desktop-only updates (these do getBoundingClientRect which is expensive)
   if (!isMobile) {
+    updateModelListVisibility();
+    updateGoTopVisibility();
     updateHeaderVisibility();
     updateSoloInfoState();
     updateModelListState();
   }
 
-  // On mobile, detect scroll back to top from text section
-  if (isMobile && isGridMode) {
-    const currentScroll = window.scrollY;
-    const sceneHeight = window.innerHeight;
+  // On mobile, update go-to-top visibility and detect scroll back
+  if (isMobile) {
+    updateMobileGoTopVisibility();
 
-    // If scrolling up while in text section area, check if we should go back to models
-    if (currentScroll < sceneHeight * 0.3 && lastPageScrollY > currentScroll && mobileCurrentModelIndex >= models.length) {
-      // User scrolled back up - reset to last model
-      const config = getGridConfig();
-      mobileScrollTarget = (models.length - 1) * config.cellHeight;
-      mobileCurrentModelIndex = models.length - 1;
-      updateModelInfoDisplay();
+    if (isGridMode) {
+      const currentScroll = window.scrollY;
+      const sceneHeight = window.innerHeight;
+
+      // If scrolling up while in text section area, check if we should go back to models
+      if (currentScroll < sceneHeight * 0.3 && lastPageScrollY > currentScroll && mobileCurrentModelIndex >= models.length) {
+        // User scrolled back up - reset to last model
+        const config = getGridConfig();
+        mobileScrollTarget = (models.length - 1) * config.cellHeight;
+        mobileCurrentModelIndex = models.length - 1;
+        updateModelInfoDisplay();
+      }
+
+      lastPageScrollY = currentScroll;
     }
-
-    lastPageScrollY = currentScroll;
   }
 }, { passive: true });
 loadTextContent();

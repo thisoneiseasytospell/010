@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // Snow system state
 let snowParticles = null;
 let snowGeometry = null;
-const SNOW_COUNT = 6000;
+const SNOW_COUNT = 3000;
 const snowData = []; // velocity, drift, size, phase for each particle
 let currentPrecipType = 'none';
 
@@ -16,6 +16,8 @@ let gustTarget = 0;
 let scene = null;
 let camera = null;
 let sceneModels = null;
+let snowAccumulationPrewarmed = false;
+let snowAccumulationWarmupInProgress = false;
 
 export function initSnow(sceneRef, cameraRef, modelsRef) {
   scene = sceneRef;
@@ -66,163 +68,174 @@ function createSnowSystem() {
 }
 
 // Update snow accumulation on models by sampling top-facing surfaces
+function buildSnowAccumulationForModel(model, options = {}) {
+  if (!model || !model.object) return;
+
+  const innerObj = model.object.userData.innerObject;
+  if (!innerObj) return;
+
+  const { visibleOverride } = options;
+
+  // Skip if already has snow
+  if (innerObj.userData.snowParticles) {
+    if (visibleOverride !== undefined) {
+      innerObj.userData.snowParticles.visible = visibleOverride;
+    } else {
+      innerObj.userData.snowParticles.visible = model.object.visible;
+    }
+    return;
+  }
+
+  const snowPositions = [];
+
+  // Traverse all meshes and sample vertices on upward-facing surfaces
+  innerObj.traverse((child) => {
+    if (!child.isMesh || !child.geometry) return;
+
+    const geo = child.geometry;
+    const posAttr = geo.attributes.position;
+    const normalAttr = geo.attributes.normal;
+    const indexAttr = geo.index;
+
+    if (!posAttr || !normalAttr) return;
+
+    // Get the mesh's transformation to local space of innerObj
+    const meshMatrix = new THREE.Matrix4();
+    child.updateWorldMatrix(true, false);
+    innerObj.updateWorldMatrix(true, false);
+
+    // Get relative transform from mesh to innerObj
+    const innerObjMatrixInverse = innerObj.matrixWorld.clone().invert();
+    meshMatrix.multiplyMatrices(innerObjMatrixInverse, child.matrixWorld);
+
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(meshMatrix);
+
+    // Sample triangles and place snow on upward-facing ones
+    const vertex = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const transformedVertex = new THREE.Vector3();
+    const transformedNormal = new THREE.Vector3();
+
+    if (indexAttr) {
+      // Indexed geometry - sample triangles
+      for (let i = 0; i < indexAttr.count; i += 3) {
+        // Get triangle center and average normal
+        let cx = 0, cy = 0, cz = 0;
+        let nx = 0, ny = 0, nz = 0;
+
+        for (let j = 0; j < 3; j++) {
+          const idx = indexAttr.getX(i + j);
+          cx += posAttr.getX(idx);
+          cy += posAttr.getY(idx);
+          cz += posAttr.getZ(idx);
+          nx += normalAttr.getX(idx);
+          ny += normalAttr.getY(idx);
+          nz += normalAttr.getZ(idx);
+        }
+
+        vertex.set(cx / 3, cy / 3, cz / 3);
+        normal.set(nx / 3, ny / 3, nz / 3).normalize();
+
+        // Transform to innerObj local space
+        transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
+        transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
+
+        // Check if surface faces upward in local space (Y is up)
+        if (transformedNormal.y > 0.4) {
+          // Add some randomness within the triangle
+          const rand1 = Math.random() * 0.3;
+          const rand2 = Math.random() * 0.3;
+
+          snowPositions.push(
+            transformedVertex.x + (Math.random() - 0.5) * 0.02,
+            transformedVertex.y + 0.01,
+            transformedVertex.z + (Math.random() - 0.5) * 0.02
+          );
+        }
+      }
+    } else {
+      // Non-indexed geometry
+      for (let i = 0; i < posAttr.count; i += 3) {
+        let cx = 0, cy = 0, cz = 0;
+        let nx = 0, ny = 0, nz = 0;
+
+        for (let j = 0; j < 3; j++) {
+          cx += posAttr.getX(i + j);
+          cy += posAttr.getY(i + j);
+          cz += posAttr.getZ(i + j);
+          nx += normalAttr.getX(i + j);
+          ny += normalAttr.getY(i + j);
+          nz += normalAttr.getZ(i + j);
+        }
+
+        vertex.set(cx / 3, cy / 3, cz / 3);
+        normal.set(nx / 3, ny / 3, nz / 3).normalize();
+
+        transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
+        transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
+
+        if (transformedNormal.y > 0.4) {
+          snowPositions.push(
+            transformedVertex.x + (Math.random() - 0.5) * 0.02,
+            transformedVertex.y + 0.01,
+            transformedVertex.z + (Math.random() - 0.5) * 0.02
+          );
+        }
+      }
+    }
+  });
+
+  if (snowPositions.length === 0) return;
+
+  // Limit and add clustering
+  const finalPositions = [];
+  const maxSnow = 500;
+  const step = Math.max(1, Math.floor(snowPositions.length / 3 / maxSnow) * 3);
+
+  for (let i = 0; i < snowPositions.length && finalPositions.length < maxSnow * 3; i += step) {
+    const x = snowPositions[i];
+    const y = snowPositions[i + 1];
+    const z = snowPositions[i + 2];
+
+    finalPositions.push(x, y, z);
+
+    // Add 1-2 clustered particles
+    const clumpCount = 1 + Math.floor(Math.random() * 2);
+    for (let c = 0; c < clumpCount && finalPositions.length < maxSnow * 3; c++) {
+      finalPositions.push(
+        x + (Math.random() - 0.5) * 0.03,
+        y + Math.random() * 0.015,
+        z + (Math.random() - 0.5) * 0.03
+      );
+    }
+  }
+
+  if (finalPositions.length === 0) return;
+
+  const snowGeo = new THREE.BufferGeometry();
+  snowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(finalPositions), 3));
+
+  const isMobile = window.innerWidth < window.innerHeight;
+  const snowMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: isMobile ? 2.5 : 1.8,
+    transparent: true,
+    opacity: 0.92,
+    sizeAttenuation: false
+  });
+
+  const snowPoints = new THREE.Points(snowGeo, snowMat);
+  snowPoints.renderOrder = 998;
+  snowPoints.visible = visibleOverride !== undefined ? visibleOverride : model.object.visible;
+  innerObj.add(snowPoints);
+  innerObj.userData.snowParticles = snowPoints;
+}
+
 export function updateSnowAccumulation() {
   if (currentPrecipType !== 'snow' || !sceneModels) return;
 
   sceneModels.forEach((model) => {
-    if (!model || !model.object) return;
-
-    const innerObj = model.object.userData.innerObject;
-    if (!innerObj) return;
-
-    // Skip if already has snow
-    if (innerObj.userData.snowParticles) {
-      innerObj.userData.snowParticles.visible = model.object.visible;
-      return;
-    }
-
-    const snowPositions = [];
-
-    // Traverse all meshes and sample vertices on upward-facing surfaces
-    innerObj.traverse((child) => {
-      if (!child.isMesh || !child.geometry) return;
-
-      const geo = child.geometry;
-      const posAttr = geo.attributes.position;
-      const normalAttr = geo.attributes.normal;
-      const indexAttr = geo.index;
-
-      if (!posAttr || !normalAttr) return;
-
-      // Get the mesh's transformation to local space of innerObj
-      const meshMatrix = new THREE.Matrix4();
-      child.updateWorldMatrix(true, false);
-      innerObj.updateWorldMatrix(true, false);
-
-      // Get relative transform from mesh to innerObj
-      const innerObjMatrixInverse = innerObj.matrixWorld.clone().invert();
-      meshMatrix.multiplyMatrices(innerObjMatrixInverse, child.matrixWorld);
-
-      const normalMatrix = new THREE.Matrix3().getNormalMatrix(meshMatrix);
-
-      // Sample triangles and place snow on upward-facing ones
-      const vertex = new THREE.Vector3();
-      const normal = new THREE.Vector3();
-      const transformedVertex = new THREE.Vector3();
-      const transformedNormal = new THREE.Vector3();
-
-      if (indexAttr) {
-        // Indexed geometry - sample triangles
-        for (let i = 0; i < indexAttr.count; i += 3) {
-          // Get triangle center and average normal
-          let cx = 0, cy = 0, cz = 0;
-          let nx = 0, ny = 0, nz = 0;
-
-          for (let j = 0; j < 3; j++) {
-            const idx = indexAttr.getX(i + j);
-            cx += posAttr.getX(idx);
-            cy += posAttr.getY(idx);
-            cz += posAttr.getZ(idx);
-            nx += normalAttr.getX(idx);
-            ny += normalAttr.getY(idx);
-            nz += normalAttr.getZ(idx);
-          }
-
-          vertex.set(cx / 3, cy / 3, cz / 3);
-          normal.set(nx / 3, ny / 3, nz / 3).normalize();
-
-          // Transform to innerObj local space
-          transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
-          transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
-
-          // Check if surface faces upward in local space (Y is up)
-          if (transformedNormal.y > 0.4) {
-            // Add some randomness within the triangle
-            const rand1 = Math.random() * 0.3;
-            const rand2 = Math.random() * 0.3;
-
-            snowPositions.push(
-              transformedVertex.x + (Math.random() - 0.5) * 0.02,
-              transformedVertex.y + 0.01,
-              transformedVertex.z + (Math.random() - 0.5) * 0.02
-            );
-          }
-        }
-      } else {
-        // Non-indexed geometry
-        for (let i = 0; i < posAttr.count; i += 3) {
-          let cx = 0, cy = 0, cz = 0;
-          let nx = 0, ny = 0, nz = 0;
-
-          for (let j = 0; j < 3; j++) {
-            cx += posAttr.getX(i + j);
-            cy += posAttr.getY(i + j);
-            cz += posAttr.getZ(i + j);
-            nx += normalAttr.getX(i + j);
-            ny += normalAttr.getY(i + j);
-            nz += normalAttr.getZ(i + j);
-          }
-
-          vertex.set(cx / 3, cy / 3, cz / 3);
-          normal.set(nx / 3, ny / 3, nz / 3).normalize();
-
-          transformedVertex.copy(vertex).applyMatrix4(meshMatrix);
-          transformedNormal.copy(normal).applyMatrix3(normalMatrix).normalize();
-
-          if (transformedNormal.y > 0.4) {
-            snowPositions.push(
-              transformedVertex.x + (Math.random() - 0.5) * 0.02,
-              transformedVertex.y + 0.01,
-              transformedVertex.z + (Math.random() - 0.5) * 0.02
-            );
-          }
-        }
-      }
-    });
-
-    if (snowPositions.length === 0) return;
-
-    // Limit and add clustering
-    const finalPositions = [];
-    const maxSnow = 500;
-    const step = Math.max(1, Math.floor(snowPositions.length / 3 / maxSnow) * 3);
-
-    for (let i = 0; i < snowPositions.length && finalPositions.length < maxSnow * 3; i += step) {
-      const x = snowPositions[i];
-      const y = snowPositions[i + 1];
-      const z = snowPositions[i + 2];
-
-      finalPositions.push(x, y, z);
-
-      // Add 1-2 clustered particles
-      const clumpCount = 1 + Math.floor(Math.random() * 2);
-      for (let c = 0; c < clumpCount && finalPositions.length < maxSnow * 3; c++) {
-        finalPositions.push(
-          x + (Math.random() - 0.5) * 0.03,
-          y + Math.random() * 0.015,
-          z + (Math.random() - 0.5) * 0.03
-        );
-      }
-    }
-
-    if (finalPositions.length === 0) return;
-
-    const snowGeo = new THREE.BufferGeometry();
-    snowGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(finalPositions), 3));
-
-    const isMobile = window.innerWidth < window.innerHeight;
-    const snowMat = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: isMobile ? 2.5 : 1.8,
-      transparent: true,
-      opacity: 0.92,
-      sizeAttenuation: false
-    });
-
-    const snowPoints = new THREE.Points(snowGeo, snowMat);
-    snowPoints.renderOrder = 998;
-    innerObj.add(snowPoints);
-    innerObj.userData.snowParticles = snowPoints;
+    buildSnowAccumulationForModel(model);
   });
 }
 
@@ -307,12 +320,33 @@ export function updatePrecipitation(windSpeed, isSnow) {
   snowGeometry.attributes.position.needsUpdate = true;
 }
 
-export function setPrecipitation(type) {
+function resetSnowParticles() {
+  if (!snowGeometry || !camera) return;
+
+  const positions = snowGeometry.attributes.position.array;
+  const resetY = camera.position.y + 12;
+  const bottomY = camera.position.y - 10;
+  const spanY = resetY - bottomY;
+
+  for (let i = 0; i < SNOW_COUNT; i++) {
+    positions[i * 3] = (Math.random() - 0.5) * 25;
+    positions[i * 3 + 1] = bottomY + Math.random() * spanY;
+    positions[i * 3 + 2] = 3 + Math.random() * 5;
+  }
+
+  snowGeometry.attributes.position.needsUpdate = true;
+  windTime = 0;
+  gustStrength = 0;
+  gustTarget = 0;
+}
+
+export function setPrecipitation(type, options = {}) {
   currentPrecipType = type;
 
   if (!snowParticles) return;
 
   const isMobile = window.innerWidth < window.innerHeight;
+  const { accumulate = true } = options;
 
   if (type === 'none') {
     snowParticles.visible = false;
@@ -321,12 +355,17 @@ export function setPrecipitation(type) {
   }
 
   snowParticles.visible = true;
+  resetSnowParticles();
 
   if (type === 'snow') {
     snowParticles.material.color.setHex(0xffffff);
     snowParticles.material.size = isMobile ? 3 : 2;
     snowParticles.material.opacity = 0.9;
-    updateSnowAccumulation();
+    if (accumulate) {
+      updateSnowAccumulation();
+    } else {
+      hideSnowAccumulation();
+    }
   } else {
     // Rain
     snowParticles.material.color.setHex(0x99aacc);
@@ -338,4 +377,63 @@ export function setPrecipitation(type) {
 
 export function getCurrentPrecipType() {
   return currentPrecipType;
+}
+
+export function prewarmSnowAccumulation() {
+  if (!sceneModels || snowAccumulationPrewarmed || snowAccumulationWarmupInProgress) return;
+
+  const hasLoadedModels = sceneModels.some((model) => model?.object);
+  if (!hasLoadedModels) return;
+
+  snowAccumulationWarmupInProgress = true;
+  let index = 0;
+  const visibleOverride = currentPrecipType === 'snow' ? undefined : false;
+
+  const runBatch = (deadline) => {
+    const hasDeadline = !!deadline && typeof deadline.timeRemaining === 'function';
+
+    while (index < sceneModels.length) {
+      buildSnowAccumulationForModel(sceneModels[index], { visibleOverride });
+      index += 1;
+
+      if (hasDeadline) {
+        if (deadline.timeRemaining() < 5) break;
+      } else {
+        break;
+      }
+    }
+
+    if (index < sceneModels.length) {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(runBatch, { timeout: 1000 });
+      } else {
+        setTimeout(runBatch, 16);
+      }
+      return;
+    }
+
+    snowAccumulationWarmupInProgress = false;
+    snowAccumulationPrewarmed = true;
+    if (visibleOverride === false) {
+      hideSnowAccumulation();
+    }
+  };
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(runBatch, { timeout: 1000 });
+  } else {
+    setTimeout(runBatch, 16);
+  }
+}
+
+export function prewarmSnow(rendererRef) {
+  if (!rendererRef || !snowParticles || !snowGeometry || !camera) return;
+
+  if (typeof rendererRef.compile === 'function') {
+    const tempScene = new THREE.Scene();
+    const tempPoints = new THREE.Points(snowGeometry, snowParticles.material);
+    tempPoints.frustumCulled = false;
+    tempScene.add(tempPoints);
+    rendererRef.compile(tempScene, camera);
+  }
 }
