@@ -2102,7 +2102,7 @@ if (modelList) {
 function updateModelListVisibility() {
   if (!modelList) return;
   const isDesktop = window.innerWidth > 900;
-  const isScrolledDown = window.scrollY > 100;
+  const isScrolledDown = window.scrollY > 300;
 
   // Hide model list when intro active or on mobile
   if (introActive || !isDesktop) {
@@ -2111,7 +2111,6 @@ function updateModelListVisibility() {
   }
 
   // In grid mode: only show when scrolled (for go-to-top)
-  // In solo mode: always show
   if (isGridMode) {
     if (isScrolledDown) {
       modelList.classList.add('visible');
@@ -2124,8 +2123,14 @@ function updateModelListVisibility() {
       modelList.classList.remove('visible');
     }
   } else {
-    // Solo mode - show model list
+    // Solo mode - always show model list with items visible
     modelList.classList.add('visible');
+    // Reset blur state when entering solo mode (if not scrolled)
+    if (!isScrolledDown && modelListItems) {
+      const items = modelListItems.querySelectorAll('.model-list-item');
+      items.forEach(item => item.classList.remove('blurring-out'));
+      modelListShowingGoTop = false;
+    }
   }
 }
 
@@ -2192,7 +2197,7 @@ function updateGoTopVisibility() {
     return;
   }
 
-  const isScrolledDown = window.scrollY > 100;
+  const isScrolledDown = window.scrollY > 300;
 
   if (isScrolledDown) {
     modelListGoTop.classList.add('visible');
