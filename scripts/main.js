@@ -140,6 +140,36 @@ let mobileSwipeDeltaY = 0;
 let isMobileSwiping = false;
 let mobileSwipeDirection = null; // 'horizontal' or 'vertical'
 
+// Mobile swipe hint (nudge)
+let mobileSwipeHintTimer = null;
+let mobileSwipeHintActive = false;
+let mobileSwipeHintPhase = 0; // Animation phase
+const SWIPE_HINT_DELAY = 4000; // 4 seconds before showing hint
+
+function resetMobileSwipeHint() {
+  if (mobileSwipeHintTimer) {
+    clearTimeout(mobileSwipeHintTimer);
+  }
+  mobileSwipeHintActive = false;
+  mobileSwipeHintPhase = 0;
+
+  // Start new timer
+  const config = getGridConfig();
+  if (config.isMobileSolo && !introActive) {
+    mobileSwipeHintTimer = setTimeout(() => {
+      mobileSwipeHintActive = true;
+      mobileSwipeHintPhase = 0;
+    }, SWIPE_HINT_DELAY);
+  }
+}
+
+function startMobileSwipeHint() {
+  const config = getGridConfig();
+  if (config.isMobileSolo && !introActive) {
+    resetMobileSwipeHint();
+  }
+}
+
 function showMobileHeader() {
   if (!mobileHeader || mobileHeaderVisible) return;
   mobileHeaderVisible = true;
@@ -813,20 +843,17 @@ function onTouchEnd(event) {
     const swipeThreshold = 50; // pixels needed to trigger switch
 
     if (mobileSwipeDirection === 'horizontal' && Math.abs(mobileSwipeDeltaX) > swipeThreshold) {
-      // Horizontal swipe - change model
+      // Horizontal swipe - change model (infinite loop)
+      let newIndex;
       if (mobileSwipeDeltaX < 0) {
-        // Swipe left - next model
-        if (mobileCurrentModelIndex < models.length - 1) {
-          mobileCurrentModelIndex++;
-          switchToMobileModel(mobileCurrentModelIndex);
-        }
+        // Swipe left - next model (loop to first if at end)
+        newIndex = (mobileCurrentModelIndex + 1) % models.length;
       } else {
-        // Swipe right - previous model
-        if (mobileCurrentModelIndex > 0) {
-          mobileCurrentModelIndex--;
-          switchToMobileModel(mobileCurrentModelIndex);
-        }
+        // Swipe right - previous model (loop to last if at start)
+        newIndex = (mobileCurrentModelIndex - 1 + models.length) % models.length;
       }
+      switchToMobileModel(newIndex);
+      resetMobileSwipeHint(); // Reset hint timer on swipe
     }
 
     // Reset swipe state
@@ -1302,6 +1329,7 @@ function exitIntro() {
 
       updateModeIcon();
       updateModelInfoDisplay();
+      startMobileSwipeHint(); // Start hint timer
     } else {
       // Desktop: Enter grid mode after intro
       isGridMode = false;
@@ -2372,6 +2400,22 @@ function animate() {
 
           targetRotationY = baseRotationY + dampedGamma * maxTiltY;
           targetRotationX = baseRotationX + dampedBeta * maxTiltX;
+        }
+
+        // Swipe hint nudge animation
+        if (mobileSwipeHintActive) {
+          mobileSwipeHintPhase += 0.12;
+          // Nudge left-right twice then stop
+          if (mobileSwipeHintPhase < Math.PI * 4) {
+            const nudgeAmount = Math.sin(mobileSwipeHintPhase) * 0.15; // ~8 degrees
+            targetRotationY += nudgeAmount;
+          } else {
+            // Reset hint after animation completes
+            mobileSwipeHintActive = false;
+            mobileSwipeHintPhase = 0;
+            // Restart timer for next hint
+            resetMobileSwipeHint();
+          }
         }
 
         // Smooth interpolation with return-to-center tendency
