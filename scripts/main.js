@@ -2228,14 +2228,16 @@ function updateGoTopVisibility() {
   const isScrolledDown = window.scrollY > 300;
 
   if (isScrolledDown) {
-    modelListGoTop.classList.add('visible');
-    // In solo mode, blur out menu items when go-to-top shows
-    if (!isGridMode && !modelListShowingGoTop && modelListItems) {
-      blurOutModelListItems();
+    // In solo mode, hide menu items IMMEDIATELY before showing go-to-top
+    if (!isGridMode && modelListItems) {
+      const items = modelListItems.querySelectorAll('.model-list-item');
+      items.forEach(item => item.classList.add('blurring-out'));
+      modelListShowingGoTop = true;
     }
+    modelListGoTop.classList.add('visible');
   } else {
     modelListGoTop.classList.remove('visible');
-    // In solo mode, show menu items when go-to-top hides
+    // In solo mode, show menu items after hiding go-to-top
     if (!isGridMode && modelListShowingGoTop && modelListItems) {
       showModelListItems();
     }
