@@ -887,15 +887,19 @@ function switchToMobileModel(index) {
   mobileCurrentModelIndex = index;
   currentModelIndex = index;
 
-  // Hide all models except current
-  sceneModels.forEach((model, i) => {
+  // Hide all models first
+  sceneModels.forEach((model) => {
     if (model && model.object) {
-      model.object.visible = (i === index);
-      if (i === index) {
-        setupModelForMobileSolo(model);
-      }
+      model.object.visible = false;
     }
   });
+
+  // Setup and show only the selected model
+  const targetModel = sceneModels[index];
+  if (targetModel && targetModel.object) {
+    setupModelForMobileSolo(targetModel);
+    targetModel.object.visible = true;
+  }
 
   updateModelInfoDisplay();
   syncSnowVisibility();
@@ -1272,7 +1276,7 @@ function exitIntro() {
   clearIntroPromptTimers();
 
   const config = getGridConfig();
-  const delay = config.isMobileSolo ? 250 : 0;
+  const delay = config.isMobileSolo ? 300 : 0;
 
   setTimeout(() => {
     if (config.isMobileSolo) {
@@ -1281,15 +1285,20 @@ function exitIntro() {
       mobileCurrentModelIndex = 0;
       currentModelIndex = 0;
 
-      // Setup all models, show only first one
-      sceneModels.forEach((model, i) => {
-        if (model && model.object) {
-          model.object.visible = (i === 0);
-          if (i === 0) {
-            setupModelForMobileSolo(model);
+      // Setup first model, ensure others are hidden
+      const firstModel = sceneModels[0];
+      if (firstModel && firstModel.object) {
+        // Hide all models first
+        sceneModels.forEach((model) => {
+          if (model && model.object) {
+            model.object.visible = false;
           }
-        }
-      });
+        });
+
+        // Setup and show only the first model
+        setupModelForMobileSolo(firstModel);
+        firstModel.object.visible = true;
+      }
 
       updateModeIcon();
       updateModelInfoDisplay();
@@ -1572,9 +1581,12 @@ function processSceneModel(object3d, modelConfig, modelIndex) {
   group.add(object3d);
 
   // Position in grid by default
+  const config = getGridConfig();
   const gridPosition = getGridPosition(modelIndex);
   group.position.set(gridPosition.x, gridPosition.y, 0);
-  group.visible = isGridMode;
+  // On mobile solo mode, hide all models initially (exitIntro will show first one)
+  // On desktop, show in grid mode
+  group.visible = config.isMobileSolo ? false : isGridMode;
   group.userData.modelIndex = modelIndex;
   group.userData.innerObject = object3d;
   group.userData.baseRotationY = object3d.rotation.y;
