@@ -65,19 +65,18 @@ const GRID_ROTATION_OVERRIDE_DEG = {};
 
 // Grid layout configuration
 function getGridConfig() {
-  const aspect = window.innerWidth / window.innerHeight;
-  const isPortrait = aspect < 1;
+  const isMobile = window.innerWidth <= 900;
 
-  if (isPortrait) {
-    // Mobile portrait: 1 column, vertical scroll
-    // cellHeight controls spacing - larger = more space between models
+  if (isMobile) {
+    // Mobile: Solo mode only - one model at a time, swipe to change
     return {
       cols: 1,
-      rows: 10, // All models in one column
-      cellWidth: 0, // Not used for single column
-      cellHeight: 7.0, // Spacing between models
-      modelSize: 3.0, // Model size
-      isMobileScroll: true
+      rows: 1,
+      cellWidth: 0,
+      cellHeight: 0,
+      modelSize: 4.2, // Slightly smaller than desktop solo for mobile screens
+      isMobileSolo: true, // New flag for mobile solo mode
+      isMobileScroll: false // No longer using scroll-based grid
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -87,6 +86,7 @@ function getGridConfig() {
       cellWidth: 3.96,
       cellHeight: 4.32,
       modelSize: 2.916,
+      isMobileSolo: false,
       isMobileScroll: false
     };
   }
@@ -94,14 +94,11 @@ function getGridConfig() {
 
 function getGridPosition(modelIndex) {
   const config = getGridConfig();
-  const { cols, cellWidth, cellHeight, isMobileScroll } = config;
+  const { cols, cellWidth, cellHeight } = config;
 
-  if (isMobileScroll) {
-    // Mobile: single column, vertically stacked, centered at camera y position
-    return {
-      x: 0,
-      y: -modelIndex * cellHeight
-    };
+  // Mobile solo mode doesn't use grid positions
+  if (config.isMobileSolo) {
+    return { x: 0, y: 0 };
   }
 
   const rows = Math.ceil(models.length / cols);
@@ -137,24 +134,15 @@ function updateGridLayout() {
   });
 }
 
-// Mobile scroll state
-let mobileScrollY = 0;
-let mobileScrollTarget = 0;
-let mobileScrollVelocity = 0;
-let mobileTouchStartY = 0;
-let mobileTouchStartScroll = 0;
+// Mobile solo mode state
 let mobileCurrentModelIndex = 0;
-let isMobileScrolling = false;
 let mobileHeaderVisible = true;
-let mobileScrollShowTimer = null;
-
-function getMobileScrollBounds() {
-  const config = getGridConfig();
-  if (!config.isMobileScroll) return { min: 0, max: 0 };
-  // Add extra position for Info at the end
-  const totalHeight = models.length * config.cellHeight;
-  return { min: 0, max: totalHeight };
-}
+let mobileSwipeStartX = 0;
+let mobileSwipeStartY = 0;
+let mobileSwipeDeltaX = 0;
+let mobileSwipeDeltaY = 0;
+let isMobileSwiping = false;
+let mobileSwipeDirection = null; // 'horizontal' or 'vertical'
 
 function showMobileHeader() {
   if (!mobileHeader || mobileHeaderVisible) return;
@@ -166,35 +154,6 @@ function hideMobileHeader() {
   if (!mobileHeader || !mobileHeaderVisible) return;
   mobileHeaderVisible = false;
   mobileHeader.classList.add('hidden');
-}
-
-function scheduleMobileHeaderShow() {
-  if (mobileScrollShowTimer) clearTimeout(mobileScrollShowTimer);
-  mobileScrollShowTimer = setTimeout(() => {
-    showMobileHeader();
-  }, 150);
-}
-
-function snapToNearestModel() {
-  const config = getGridConfig();
-  if (!config.isMobileScroll) return;
-
-  const cellHeight = config.cellHeight;
-  const nearestIndex = Math.round(mobileScrollTarget / cellHeight);
-  // Allow scrolling to Info position (models.length) as last item
-  const clampedIndex = Math.max(0, Math.min(nearestIndex, models.length));
-  mobileScrollTarget = clampedIndex * cellHeight;
-  mobileCurrentModelIndex = clampedIndex;
-
-  // If at Info position (past last model), scroll page to text section
-  if (clampedIndex >= models.length) {
-    const textSection = document.getElementById('text-section');
-    if (textSection) {
-      setTimeout(() => {
-        textSection.scrollIntoView({ behavior: 'smooth' });
-      }, 200);
-    }
-  }
 }
 
 // Scene setup
@@ -744,14 +703,6 @@ let touchDragRotationY = 0;
 let touchDragTargetX = 0;
 let touchDragTargetY = 0;
 
-// Mobile grid touch rotation with momentum (horizontal only)
-let mobileGridTouchRotating = false;
-let mobileGridTouchRotationY = 0;
-let mobileGridTouchTargetY = 0;
-let mobileGridRotationVelocityY = 0;
-let lastMobileRotationTime = 0;
-const MOBILE_ROTATION_FRICTION = 0.95; // Velocity decay per frame
-const MOBILE_ROTATION_SENSITIVITY = 1.5; // How fast rotation responds to touch
 
 const baseFrustumSize = 12; // Original frustum size
 
@@ -787,20 +738,21 @@ function onTouchStart(event) {
     touchStartTime = Date.now();
     touchDragging = false;
 
-    // Mobile scroll - only if touch is within scene container
+    // Mobile solo mode - setup swipe tracking
     const config = getGridConfig();
-    if (config.isMobileScroll && isGridMode) {
-      // Check if touch is in the scene area (not text section)
+    if (config.isMobileSolo) {
       const sceneRect = container?.getBoundingClientRect();
       const touchInScene = sceneRect && touch.clientY < sceneRect.bottom && touch.clientY > sceneRect.top;
 
       if (touchInScene) {
-        mobileTouchStartY = touch.clientY;
-        mobileTouchStartScroll = mobileScrollTarget;
-        isMobileScrolling = true;
-        mobileScrollVelocity = 0;
+        mobileSwipeStartX = touch.clientX;
+        mobileSwipeStartY = touch.clientY;
+        mobileSwipeDeltaX = 0;
+        mobileSwipeDeltaY = 0;
+        isMobileSwiping = true;
+        mobileSwipeDirection = null;
       } else {
-        isMobileScrolling = false;
+        isMobileSwiping = false;
       }
     }
   }
@@ -822,97 +774,69 @@ function onTouchMove(event) {
     touchDragging = true;
   }
 
-  // Mobile scroll in grid mode
+  // Mobile solo mode - swipe to change models
   const config = getGridConfig();
-  if (config.isMobileScroll && isGridMode && isMobileScrolling) {
-    event.preventDefault();
+  if (config.isMobileSolo && isMobileSwiping) {
+    mobileSwipeDeltaX = touch.clientX - mobileSwipeStartX;
+    mobileSwipeDeltaY = touch.clientY - mobileSwipeStartY;
 
-    const deltaX = touch.clientX - touchStartX;
-    const deltaY = touch.clientY - mobileTouchStartY;
-
-    // Determine if this is rotation or vertical scroll
-    // Horizontal movement = rotation, vertical movement = scroll
-    // Once we start one mode, stick with it until touch ends
-    if (!mobileGridTouchRotating && Math.abs(deltaX) > 15) {
-      // Any horizontal movement enables rotation mode
-      mobileGridTouchRotating = true;
+    // Determine swipe direction if not yet locked
+    if (!mobileSwipeDirection && (Math.abs(mobileSwipeDeltaX) > 20 || Math.abs(mobileSwipeDeltaY) > 20)) {
+      // Lock to horizontal or vertical based on initial direction
+      if (Math.abs(mobileSwipeDeltaX) > Math.abs(mobileSwipeDeltaY)) {
+        mobileSwipeDirection = 'horizontal';
+      } else {
+        mobileSwipeDirection = 'vertical';
+      }
     }
 
-    if (mobileGridTouchRotating) {
-      // Horizontal rotation only (Y axis) - no vertical to avoid scroll conflicts
-      const newTargetY = (deltaX / window.innerWidth) * Math.PI * MOBILE_ROTATION_SENSITIVITY;
-
-      // Track velocity for momentum
-      const now = Date.now();
-      if (lastMobileRotationTime > 0) {
-        const dt = Math.max(now - lastMobileRotationTime, 1);
-        mobileGridRotationVelocityY = (newTargetY - mobileGridTouchTargetY) / dt * 16; // Normalize to ~60fps
-      }
-      lastMobileRotationTime = now;
-
-      mobileGridTouchTargetY = newTargetY;
-    } else {
-      // Track swipe delta for discrete model switching
-      lastTouchY = touch.clientY;
+    // Only prevent default for horizontal swipes (model switching)
+    // Allow vertical swipes to scroll the page naturally
+    if (mobileSwipeDirection === 'horizontal') {
+      event.preventDefault();
     }
     return;
   }
 
-  // In solo mode, use touch drag to rotate model
-  if (!isGridMode && touchDragging) {
-    // Prevent scrolling when dragging
+  // Desktop solo mode - touch drag to rotate model
+  if (!config.isMobileSolo && !isGridMode && touchDragging) {
     event.preventDefault();
-
-    // Map drag to rotation (full screen drag = full rotation)
     touchDragTargetY = (deltaX / window.innerWidth) * Math.PI * 1.5;
-    touchDragTargetX = (deltaY / window.innerHeight) * Math.PI * 0.8; // Mirrored: swipe up = look up
+    touchDragTargetX = (deltaY / window.innerHeight) * Math.PI * 0.8;
   }
 }
 
 function onTouchEnd(event) {
   lastTouchEndTime = Date.now(); // Track for click prevention
 
-  // Handle mobile scroll end - discrete model switching
   const config = getGridConfig();
-  if (config.isMobileScroll && isMobileScrolling) {
-    isMobileScrolling = false;
-    lastTouchTime = 0;
 
-    if (mobileGridTouchRotating) {
-      // Save rotation and apply momentum
-      mobileGridTouchRotationY += mobileGridTouchTargetY;
-      mobileGridTouchTargetY = 0;
-      mobileGridTouchRotating = false;
-      lastMobileRotationTime = 0;
-    } else {
-      // Discrete swipe: detect direction and switch model
-      const swipeDelta = mobileTouchStartY - lastTouchY;
-      const swipeThreshold = 50; // pixels needed to trigger switch
+  // Handle mobile solo mode swipe end
+  if (config.isMobileSolo && isMobileSwiping) {
+    isMobileSwiping = false;
+    const swipeThreshold = 50; // pixels needed to trigger switch
 
-      if (Math.abs(swipeDelta) > swipeThreshold) {
-        if (swipeDelta > 0) {
-          // Swipe up - next model
-          mobileCurrentModelIndex = Math.min(mobileCurrentModelIndex + 1, models.length);
-        } else {
-          // Swipe down - previous model
-          mobileCurrentModelIndex = Math.max(mobileCurrentModelIndex - 1, 0);
+    if (mobileSwipeDirection === 'horizontal' && Math.abs(mobileSwipeDeltaX) > swipeThreshold) {
+      // Horizontal swipe - change model
+      if (mobileSwipeDeltaX < 0) {
+        // Swipe left - next model
+        if (mobileCurrentModelIndex < models.length - 1) {
+          mobileCurrentModelIndex++;
+          switchToMobileModel(mobileCurrentModelIndex);
         }
-      }
-
-      // Snap to current model
-      mobileScrollTarget = mobileCurrentModelIndex * config.cellHeight;
-      updateModelInfoDisplay();
-
-      // If at Info position, scroll to text section
-      if (mobileCurrentModelIndex >= models.length) {
-        const textSection = document.getElementById('text-section');
-        if (textSection) {
-          setTimeout(() => {
-            textSection.scrollIntoView({ behavior: 'smooth' });
-          }, 200);
+      } else {
+        // Swipe right - previous model
+        if (mobileCurrentModelIndex > 0) {
+          mobileCurrentModelIndex--;
+          switchToMobileModel(mobileCurrentModelIndex);
         }
       }
     }
+
+    // Reset swipe state
+    mobileSwipeDeltaX = 0;
+    mobileSwipeDeltaY = 0;
+    mobileSwipeDirection = null;
   }
 
   if (introActive) {
@@ -929,11 +853,18 @@ function onTouchEnd(event) {
 
   // Reset drag state
   touchDragging = false;
-  // Keep the rotation where it ended
-  touchDragRotationX += touchDragTargetX;
-  touchDragRotationY += touchDragTargetY;
+  // Keep the rotation where it ended (desktop only)
+  if (!config.isMobileSolo) {
+    touchDragRotationX += touchDragTargetX;
+    touchDragRotationY += touchDragTargetY;
+  }
   touchDragTargetX = 0;
   touchDragTargetY = 0;
+
+  // On mobile solo mode, taps don't trigger model interaction
+  if (config.isMobileSolo) {
+    return;
+  }
 
   // Only trigger interaction on tap, not drag
   if (wasTap && event.changedTouches.length > 0) {
@@ -945,43 +876,56 @@ function onTouchEnd(event) {
     const timeSinceLastTap = now - lastTapTime;
     lastTapTime = now;
 
-    // Double tap in solo mode goes back to grid
+    // Double tap in solo mode goes back to grid (desktop only)
     if (!isGridMode && timeSinceLastTap < DOUBLE_TAP_THRESHOLD) {
-      toggleMode();
-      return;
-    }
-
-    // On mobile scroll, tap on model goes to solo mode
-    if (config.isMobileScroll && isGridMode) {
-      // Use raycasting to find which model was actually tapped
-      raycaster.setFromCamera(mouse, camera);
-      const modelObjects = sceneModels
-        .map((entry) => entry?.object)
-        .filter((object) => object && object.visible);
-
-      if (modelObjects.length > 0) {
-        const intersections = raycaster.intersectObjects(modelObjects, true);
-        if (intersections.length > 0) {
-          let target = intersections[0].object;
-          while (target && target.userData?.modelIndex === undefined && target.parent) {
-            target = target.parent;
-          }
-
-          if (target && typeof target.userData?.modelIndex === 'number') {
-            currentModelIndex = target.userData.modelIndex;
-            toggleMode(); // Enter solo mode with tapped model
-            return;
-          }
-        }
-      }
-      // Fallback to centered model if no hit
-      currentModelIndex = mobileCurrentModelIndex;
       toggleMode();
       return;
     }
 
     handleInteraction();
   }
+}
+
+// Switch to a specific model in mobile solo mode
+function switchToMobileModel(index) {
+  mobileCurrentModelIndex = index;
+  currentModelIndex = index;
+
+  // Hide all models except current
+  sceneModels.forEach((model, i) => {
+    if (model && model.object) {
+      model.object.visible = (i === index);
+      if (i === index) {
+        setupModelForMobileSolo(model);
+      }
+    }
+  });
+
+  updateModelInfoDisplay();
+  syncSnowVisibility();
+}
+
+// Setup a model for mobile solo mode display
+function setupModelForMobileSolo(model) {
+  if (!model || !model.object) return;
+
+  const config = getGridConfig();
+  const innerObj = model.object.userData.innerObject;
+
+  // Scale for mobile solo size
+  if (innerObj && model.object.userData.baseScale) {
+    const mobileScale = model.object.userData.baseScale * (config.modelSize / GRID_MODEL_SIZE);
+    innerObj.scale.setScalar(mobileScale);
+  }
+
+  // Center the model
+  model.object.position.set(0, 0, 0);
+  model.object.updateMatrixWorld(true);
+  const bbox = new THREE.Box3().setFromObject(model.object);
+  const center = new THREE.Vector3();
+  bbox.getCenter(center);
+  model.object.position.x = -center.x;
+  model.object.position.y = -center.y;
 }
 
 function handleInteraction() {
@@ -1152,31 +1096,18 @@ function updateModeIcon() {
 function updateModelInfoDisplay() {
   if (!soloInfoPanel || !soloInfoTitle) return;
 
-  // On mobile scroll, show current scroll model's name
   const config = getGridConfig();
-  const displayIndex = (config.isMobileScroll && isGridMode)
+
+  // On mobile solo mode, use mobileCurrentModelIndex
+  const displayIndex = config.isMobileSolo
     ? mobileCurrentModelIndex
     : currentModelIndex;
-
-  // Check if we're at the Info position (past last model)
-  const isAtInfoPosition = config.isMobileScroll && isGridMode && displayIndex >= models.length;
 
   const currentModel = models[displayIndex];
   const info = currentModel ? modelInfoById.get(currentModel.id) : null;
 
   // Remove description body
   if (soloInfoBody) soloInfoBody.innerHTML = '';
-
-  if (isAtInfoPosition) {
-    // Show "Info" when scrolled past last model
-    soloInfoTitle.textContent = 'Info';
-    if (currentModelNameEl) {
-      currentModelNameEl.textContent = 'Info';
-    }
-    soloInfoPanel.classList.add('visible');
-    updateDropdownActiveState(-1); // No model active
-    return;
-  }
 
   if (!currentModel) {
     soloInfoTitle.textContent = '';
@@ -1196,8 +1127,8 @@ function updateModelInfoDisplay() {
   }
 
   const hasContent = Boolean(heading);
-  // Show in solo mode OR in mobile scroll grid mode
-  const shouldShow = !introActive && hasContent && (!isGridMode || config.isMobileScroll);
+  // Show in solo mode (desktop or mobile)
+  const shouldShow = !introActive && hasContent && (!isGridMode || config.isMobileSolo);
   if (shouldShow) {
     soloInfoPanel.classList.add('visible');
   } else {
@@ -1269,16 +1200,12 @@ function updateDropdownActiveState(activeIndex) {
 
 function scrollToModel(index) {
   const config = getGridConfig();
-  if (!config.isMobileScroll) return;
 
-  // Smooth scroll by setting target - the animate loop will interpolate
-  mobileScrollTarget = index * config.cellHeight;
-  mobileCurrentModelIndex = index;
-
-  // Reset touch rotation for new model
-  mobileGridTouchRotationY = 0;
-  mobileGridTouchTargetY = 0;
-  mobileGridRotationVelocityY = 0;
+  if (config.isMobileSolo) {
+    // Mobile solo mode - switch to model
+    switchToMobileModel(index);
+    return;
+  }
 
   updateModelInfoDisplay();
 }
@@ -1341,16 +1268,41 @@ function exitIntro() {
 
   clearIntroPromptTimers();
 
-  // Always enter grid mode after intro (for both desktop and mobile)
-  isGridMode = false; // Force to false first
-  toggleMode(); // Then toggle to grid mode
+  const config = getGridConfig();
+  const delay = config.isMobileSolo ? 250 : 0;
 
-  // Trigger grid intro animation
-  gridIntroAnimationId += 1;
-  gridIntroRandomizationPending = true;
-  triggerGridIntroRandomization();
+  setTimeout(() => {
+    if (config.isMobileSolo) {
+      // Mobile: Start in solo mode with first model
+      isGridMode = false;
+      mobileCurrentModelIndex = 0;
+      currentModelIndex = 0;
 
-  updateModelInfoDisplay();
+      // Setup all models, show only first one
+      sceneModels.forEach((model, i) => {
+        if (model && model.object) {
+          model.object.visible = (i === 0);
+          if (i === 0) {
+            setupModelForMobileSolo(model);
+          }
+        }
+      });
+
+      updateModeIcon();
+      updateModelInfoDisplay();
+    } else {
+      // Desktop: Enter grid mode after intro
+      isGridMode = false;
+      toggleMode(); // Toggle to grid mode
+
+      // Trigger grid intro animation
+      gridIntroAnimationId += 1;
+      gridIntroRandomizationPending = true;
+      triggerGridIntroRandomization();
+
+      updateModelInfoDisplay();
+    }
+  }, delay);
 }
 
 function showIntro() {
@@ -2214,22 +2166,32 @@ function updateModelListVisibility() {
   const isDesktop = window.innerWidth > 900;
   const isScrolledDown = window.scrollY > 100;
 
-  // Show in solo mode OR when scrolled down (for go-to-top in grid mode)
-  if (!introActive && isDesktop && (!isGridMode || isScrolledDown)) {
+  // Check if we're past the 3D scene (in text section)
+  const sceneRect = container?.getBoundingClientRect();
+  const isInTextSection = sceneRect && sceneRect.bottom < 100;
+
+  // Hide model list when intro active or on mobile
+  if (introActive || !isDesktop) {
+    modelList.classList.remove('visible');
+    return;
+  }
+
+  // Show in solo mode OR when scrolled down (for go-to-top)
+  if (!isGridMode || isScrolledDown) {
     modelList.classList.add('visible');
   } else {
     modelList.classList.remove('visible');
   }
 
-  // In grid mode, always hide menu items (only go-to-top shows when scrolled)
-  if (isGridMode && modelListItems) {
+  // In grid mode or text section, hide menu items (only go-to-top shows when scrolled)
+  if ((isGridMode || isInTextSection) && modelListItems) {
     const items = modelListItems.querySelectorAll('.model-list-item');
     items.forEach(item => item.classList.add('blurring-out'));
     modelListShowingGoTop = true;
   }
 
-  // In solo mode at top, show menu items
-  if (!isGridMode && !isScrolledDown && modelListItems) {
+  // In solo mode at top (not in text section), show menu items
+  if (!isGridMode && !isScrolledDown && !isInTextSection && modelListItems) {
     const items = modelListItems.querySelectorAll('.model-list-item');
     items.forEach(item => item.classList.remove('blurring-out'));
     modelListShowingGoTop = false;
@@ -2395,25 +2357,9 @@ window.addEventListener('scroll', () => {
     updateModelListState();
   }
 
-  // On mobile, update go-to-top visibility and detect scroll back
+  // On mobile, update go-to-top visibility
   if (isMobile) {
     updateMobileGoTopVisibility();
-
-    if (isGridMode) {
-      const currentScroll = window.scrollY;
-      const sceneHeight = window.innerHeight;
-
-      // If scrolling up while in text section area, check if we should go back to models
-      if (currentScroll < sceneHeight * 0.3 && lastPageScrollY > currentScroll && mobileCurrentModelIndex >= models.length) {
-        // User scrolled back up - reset to last model
-        const config = getGridConfig();
-        mobileScrollTarget = (models.length - 1) * config.cellHeight;
-        mobileCurrentModelIndex = models.length - 1;
-        updateModelInfoDisplay();
-      }
-
-      lastPageScrollY = currentScroll;
-    }
   }
 }, { passive: true });
 loadTextContent();
@@ -2461,25 +2407,46 @@ function animate() {
     lastFrameTime = now;
   }
 
-  // Mobile scroll - smooth interpolation
   const config = getGridConfig();
-  if (config.isMobileScroll && isGridMode) {
-    // Smoothly move toward target
-    mobileScrollY = THREE.MathUtils.lerp(mobileScrollY, mobileScrollTarget, 0.15);
 
-    // Move camera to show current scroll position
-    camera.position.y = -mobileScrollY;
+  // Mobile solo mode - gyro-controlled rotation with center bias
+  if (config.isMobileSolo) {
+    const currentModel = sceneModels[mobileCurrentModelIndex];
+    if (currentModel && currentModel.object) {
+      const innerObj = currentModel.object.userData.innerObject;
+      if (innerObj) {
+        const baseRotationY = currentModel.object.userData.baseRotationY || 0;
+        const baseRotationX = currentModel.object.userData.baseRotationX || 0;
 
-    // Update current model index based on scroll
-    const newIndex = Math.round(mobileScrollY / config.cellHeight);
-    if (newIndex !== mobileCurrentModelIndex && newIndex >= 0 && newIndex < models.length) {
-      mobileCurrentModelIndex = newIndex;
-      // Reset touch rotation when switching to new model
-      mobileGridTouchRotationY = 0;
-      mobileGridTouchTargetY = 0;
-      mobileGridRotationVelocityY = 0;
-      updateModelInfoDisplay();
+        // Gyro with strong center bias - model tends to return to center
+        // Reduced rotation range to avoid sideways views
+        let targetRotationY = baseRotationY;
+        let targetRotationX = baseRotationX;
+
+        if (gyroEnabled) {
+          // Center-biased gyro: use a reduced range and damped response
+          // gamma (left/right tilt) maps to Y rotation, range limited to ±30 degrees
+          // beta (front/back tilt) maps to X rotation, range limited to ±20 degrees
+          const maxTiltY = Math.PI * 0.17; // ~30 degrees max horizontal rotation
+          const maxTiltX = Math.PI * 0.11; // ~20 degrees max vertical rotation
+
+          // Apply dampening curve - more movement near center, less at extremes
+          const dampedGamma = Math.sign(gyro.gamma) * Math.pow(Math.abs(gyro.gamma), 0.7);
+          const dampedBeta = Math.sign(gyro.beta) * Math.pow(Math.abs(gyro.beta), 0.7);
+
+          targetRotationY = baseRotationY + dampedGamma * maxTiltY;
+          targetRotationX = baseRotationX + dampedBeta * maxTiltX;
+        }
+
+        // Smooth interpolation with return-to-center tendency
+        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY, 0.08);
+        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, targetRotationX, 0.08);
+        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.1);
+      }
     }
+
+    // Keep camera at origin for mobile solo
+    camera.position.y = 0;
   } else if (isGridMode) {
     // Desktop grid mode - camera at origin
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.1);
@@ -2510,36 +2477,6 @@ function animate() {
           innerObj.rotation.set(baseRotationX, baseRotationY, 0);
           group.userData.gridIntroAnimating = false;
         }
-        return;
-      }
-
-      // Mobile grid touch rotation - only for current model
-      // Horizontal (Y) from touch, vertical (X) from gyro only
-      const isMobileScrollConfig = config.isMobileScroll;
-      if (isMobileScrollConfig && modelIndex === mobileCurrentModelIndex) {
-        // Apply momentum when not actively touching
-        if (!mobileGridTouchRotating) {
-          mobileGridTouchRotationY += mobileGridRotationVelocityY;
-          mobileGridRotationVelocityY *= MOBILE_ROTATION_FRICTION;
-
-          // Stop tiny movements
-          if (Math.abs(mobileGridRotationVelocityY) < 0.0001) mobileGridRotationVelocityY = 0;
-        }
-
-        const touchRotY = mobileGridTouchRotationY + mobileGridTouchTargetY;
-        const targetRotationY = baseRotationY + touchRotY;
-
-        // Gyro controls both axes - touch only adds to horizontal
-        let gyroOffsetY = 0;
-        let gyroOffsetX = 0;
-        if (gyroEnabled) {
-          gyroOffsetY = gyro.gamma * Math.PI * 0.2;
-          gyroOffsetX = gyro.beta * Math.PI * 0.15; // Vertical tilt from gyro
-        }
-
-        innerObj.rotation.y = THREE.MathUtils.lerp(innerObj.rotation.y, targetRotationY + gyroOffsetY, 0.15);
-        innerObj.rotation.x = THREE.MathUtils.lerp(innerObj.rotation.x, baseRotationX + gyroOffsetX, 0.12);
-        innerObj.rotation.z = THREE.MathUtils.lerp(innerObj.rotation.z, 0, 0.08);
         return;
       }
 
