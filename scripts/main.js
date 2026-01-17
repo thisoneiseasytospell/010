@@ -1868,11 +1868,9 @@ async function loadTextContent() {
   }
 }
 
-// Word reveal/hide queues
+// Word reveal queue (hiding is instant, only reveal is animated)
 const wordRevealQueue = [];
-const wordHideQueue = [];
 let isProcessingWords = false;
-let isProcessingHide = false;
 let lastScrollY = 0;
 let scrollDirection = 'down'; // 'down' or 'up'
 
@@ -1903,26 +1901,6 @@ function processWordQueue() {
   }, 60);
 }
 
-function processHideQueue() {
-  if (isProcessingHide || wordHideQueue.length === 0) return;
-
-  isProcessingHide = true;
-
-  // Hide 12 words at once (from end - reverse order)
-  for (let i = 0; i < 12 && wordHideQueue.length > 0; i++) {
-    const word = wordHideQueue.pop(); // pop from end for reverse
-    if (word) {
-      word.classList.remove('word-pending', 'word-revealed');
-    }
-  }
-
-  // Delay before next batch
-  setTimeout(() => {
-    isProcessingHide = false;
-    processHideQueue();
-  }, 60);
-}
-
 function setupWordReveal() {
   const textLines = document.querySelectorAll('.text-line');
 
@@ -1933,12 +1911,7 @@ function setupWordReveal() {
       if (entry.isIntersecting && !line.classList.contains('line-revealed')) {
         line.classList.add('line-revealed');
 
-        // Remove from hide queue if it was being hidden
         const words = Array.from(line.querySelectorAll('.text-word'));
-        words.forEach((word) => {
-          const hideIdx = wordHideQueue.indexOf(word);
-          if (hideIdx > -1) wordHideQueue.splice(hideIdx, 1);
-        });
 
         // Add words to reveal queue - reverse order if scrolling up
         const wordsToAdd = scrollDirection === 'up' ? [...words].reverse() : words;
@@ -1951,24 +1924,16 @@ function setupWordReveal() {
         processWordQueue();
 
       } else if (!entry.isIntersecting && line.classList.contains('line-revealed')) {
-        // Line left viewport - queue words for hiding (reverse order)
+        // Line left viewport - instantly hide all words (no queue/animation)
         line.classList.remove('line-revealed');
         const words = Array.from(line.querySelectorAll('.text-word'));
 
-        // Remove from reveal queue
+        // Remove from reveal queue and instantly hide
         words.forEach((word) => {
-          word.classList.remove('word-pending');
+          word.classList.remove('word-pending', 'word-revealed');
           const idx = wordRevealQueue.indexOf(word);
           if (idx > -1) wordRevealQueue.splice(idx, 1);
         });
-
-        // Add revealed words to hide queue (they'll be popped from end)
-        words.forEach((word) => {
-          if (word.classList.contains('word-revealed')) {
-            wordHideQueue.push(word);
-          }
-        });
-        processHideQueue();
       }
     });
   }, {
