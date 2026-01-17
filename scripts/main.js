@@ -42,10 +42,6 @@ const SOLO_MOUSE_ROTATION_X_FACTOR = 0.15;
 
 let introActive = true;
 let introPromptHideTimer = null;
-let introPromptMoveHandle = null;
-let introPromptPendingPosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-let introPromptCurrentPosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-let introPromptAnimating = false;
 
 let gridIntroRandomizationPending = false;
 let gridIntroAnimationId = 0;
@@ -1333,13 +1329,6 @@ function clearIntroPromptTimers() {
     clearTimeout(introPromptHideTimer);
     introPromptHideTimer = null;
   }
-  if (introPromptMoveHandle) {
-    cancelAnimationFrame(introPromptMoveHandle);
-    introPromptMoveHandle = null;
-  }
-  introPromptPendingPosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-  introPromptCurrentPosition = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-  introPromptAnimating = false;
 }
 
 function scheduleIntroPromptHide() {
@@ -1353,78 +1342,8 @@ function scheduleIntroPromptHide() {
   }, 2000);
 }
 
-function updateIntroPrompt(event) {
-  if (!introPrompt) return;
-
-  if (!introActive) {
-    introPrompt.classList.remove('visible');
-    clearIntroPromptTimers();
-    return;
-  }
-
-  // On touch devices, always show centered prompt
-  if (isTouchDevice) {
-    if (!introPrompt.classList.contains('visible')) {
-      introPrompt.classList.add('visible');
-    }
-    return;
-  }
-
-  const offsetX = 18;
-  const offsetY = 28;
-  const promptWidth = introPrompt.offsetWidth || 0;
-  const promptHeight = introPrompt.offsetHeight || 0;
-  const maxX = window.innerWidth - promptWidth - 20;
-  const maxY = window.innerHeight - promptHeight - 20;
-  const minX = 20;
-  const minY = 20;
-
-  const targetX = Math.min(maxX, Math.max(minX, event.clientX + offsetX));
-  const targetY = Math.min(maxY, Math.max(minY, event.clientY + offsetY));
-
-  introPromptPendingPosition = { x: targetX, y: targetY };
-
-  if (!introPrompt.classList.contains('visible')) {
-    introPrompt.classList.add('visible');
-  }
-
-  scheduleIntroPromptHide();
-
-  if (!introPromptAnimating) {
-    introPromptAnimating = true;
-    animateIntroPrompt();
-  }
-}
-
-function animateIntroPrompt() {
-  if (!introPromptAnimating) return;
-  if (!introActive) {
-    introPromptAnimating = false;
-    introPromptMoveHandle = null;
-    return;
-  }
-
-  const { x: targetX, y: targetY } = introPromptPendingPosition || introPromptCurrentPosition;
-  introPromptCurrentPosition.x += (targetX - introPromptCurrentPosition.x) * 0.12;
-  introPromptCurrentPosition.y += (targetY - introPromptCurrentPosition.y) * 0.12;
-
-  introPrompt.style.left = `${introPromptCurrentPosition.x}px`;
-  introPrompt.style.top = `${introPromptCurrentPosition.y}px`;
-
-  const dx = targetX - introPromptCurrentPosition.x;
-  const dy = targetY - introPromptCurrentPosition.y;
-  const closeEnough = Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5;
-
-  if (closeEnough) {
-    introPromptCurrentPosition.x = targetX;
-    introPromptCurrentPosition.y = targetY;
-    introPromptPendingPosition = null;
-    introPromptMoveHandle = null;
-    introPromptAnimating = false;
-    return;
-  }
-
-  introPromptMoveHandle = requestAnimationFrame(animateIntroPrompt);
+function updateIntroPrompt() {
+  // Intro prompt is now static - no mouse following needed
 }
 
 function triggerGridIntroRandomization() {
@@ -1521,7 +1440,7 @@ function checkLoadingComplete() {
     scheduleSnowPrewarm();
     // Show intro prompt only after loading is complete
     if (introPrompt && introActive) {
-      introPrompt.textContent = isTouchDevice ? 'TAP TO ENTER' : 'CLICK TO ENTER';
+      introPrompt.textContent = isTouchDevice ? 'tap to enter' : 'click to enter';
       introPrompt.classList.add('visible');
     }
   }
@@ -2164,38 +2083,15 @@ if (modelList) {
 function updateModelListVisibility() {
   if (!modelList) return;
   const isDesktop = window.innerWidth > 900;
-  const isScrolledDown = window.scrollY > 100;
 
-  // Check if we're past the 3D scene (in text section)
-  const sceneRect = container?.getBoundingClientRect();
-  const isInTextSection = sceneRect && sceneRect.bottom < 100;
-
-  // Hide model list when intro active or on mobile
-  if (introActive || !isDesktop) {
+  // Hide model list when intro active or on mobile or in grid mode
+  if (introActive || !isDesktop || isGridMode) {
     modelList.classList.remove('visible');
     return;
   }
 
-  // Show in solo mode OR when scrolled down (for go-to-top)
-  if (!isGridMode || isScrolledDown) {
-    modelList.classList.add('visible');
-  } else {
-    modelList.classList.remove('visible');
-  }
-
-  // In grid mode or text section, hide menu items (only go-to-top shows when scrolled)
-  if ((isGridMode || isInTextSection) && modelListItems) {
-    const items = modelListItems.querySelectorAll('.model-list-item');
-    items.forEach(item => item.classList.add('blurring-out'));
-    modelListShowingGoTop = true;
-  }
-
-  // In solo mode at top (not in text section), show menu items
-  if (!isGridMode && !isScrolledDown && !isInTextSection && modelListItems) {
-    const items = modelListItems.querySelectorAll('.model-list-item');
-    items.forEach(item => item.classList.remove('blurring-out'));
-    modelListShowingGoTop = false;
-  }
+  // Solo mode only - show model list
+  modelList.classList.add('visible');
 }
 
 // Track state for sequential animation
@@ -2254,9 +2150,9 @@ function blurOutModelListItems() {
   });
 }
 
-// Show go-to-top when scrolled down (both grid and solo mode)
+// Show go-to-top when scrolled down in solo mode only
 function updateGoTopVisibility() {
-  if (!modelListGoTop || introActive) {
+  if (!modelListGoTop || introActive || isGridMode) {
     modelListGoTop?.classList.remove('visible');
     return;
   }
@@ -2265,14 +2161,14 @@ function updateGoTopVisibility() {
 
   if (isScrolledDown) {
     modelListGoTop.classList.add('visible');
-    // In solo mode, blur out menu items when go-to-top shows
-    if (!isGridMode && !modelListShowingGoTop && modelListItems) {
+    // Blur out menu items when go-to-top shows
+    if (!modelListShowingGoTop && modelListItems) {
       blurOutModelListItems();
     }
   } else {
     modelListGoTop.classList.remove('visible');
-    // In solo mode, show menu items when go-to-top hides
-    if (!isGridMode && modelListShowingGoTop && modelListItems) {
+    // Show menu items when go-to-top hides
+    if (modelListShowingGoTop && modelListItems) {
       showModelListItems();
     }
   }

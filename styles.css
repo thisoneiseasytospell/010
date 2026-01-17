@@ -92,20 +92,19 @@ body:not(.intro-active) {
 #intro-cursor-prompt {
   position: fixed;
   left: 50%;
-  top: 50%;
-  transform: translate(-50%, 80px);
-  font-size: 0.75rem;
-  letter-spacing: 0.35em;
-  text-transform: uppercase;
-  color: #08090d;
-  padding: 0.35rem 0.75rem;
-  background: rgba(255, 255, 255, 0.96);
-  border-radius: 999px;
-  border: 1px solid rgba(8, 9, 13, 0.1);
-  box-shadow: none;
+  top: 70%;
+  transform: translateX(-50%);
+  font-family: 'WTSkrappaTRIAL', 'Inter', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: lowercase;
+  color: rgba(8, 9, 13, 0.5);
+  padding: 0;
+  background: none;
+  border: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.35s ease, left 0.15s ease, top 0.15s ease;
+  transition: opacity 0.5s ease;
 }
 
 #intro-cursor-prompt.visible {
@@ -523,12 +522,7 @@ body:not(.intro-active) {
 
 /* Mobile intro overlay */
 @media (pointer: coarse) {
-  #intro-cursor-prompt {
-    /* On touch devices, keep centered (no cursor follow) */
-    transform: translate(-50%, 100px) !important;
-  }
-
-  /* Hide grid mode icon on mobile - tap model to go back */
+  /* Hide grid mode icon on mobile */
   #grid-mode-icon {
     display: none;
   }
