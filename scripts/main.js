@@ -70,9 +70,9 @@ function getGridConfig() {
       rows: 1,
       cellWidth: 0,
       cellHeight: 0,
-      modelSize: 4.2, // Slightly smaller than desktop solo for mobile screens
-      isMobileSolo: true, // New flag for mobile solo mode
-      isMobileScroll: false // No longer using scroll-based grid
+      modelSize: 3.6, // Smaller for mobile screens
+      isMobileSolo: true,
+      isMobileScroll: false
     };
   } else {
     // Desktop/landscape: 5 columns, 2 rows
@@ -908,13 +908,20 @@ function setupModelForMobileSolo(model) {
   const config = getGridConfig();
   const innerObj = model.object.userData.innerObject;
 
+  if (!innerObj) return;
+
+  // Reset rotation to base immediately (no random rotation on mobile)
+  const baseRotationY = model.object.userData.baseRotationY || 0;
+  const baseRotationX = model.object.userData.baseRotationX || 0;
+  innerObj.rotation.set(baseRotationX, baseRotationY, 0);
+
   // Scale for mobile solo size
-  if (innerObj && model.object.userData.baseScale) {
+  if (model.object.userData.baseScale) {
     const mobileScale = model.object.userData.baseScale * (config.modelSize / GRID_MODEL_SIZE);
     innerObj.scale.setScalar(mobileScale);
   }
 
-  // Center the model
+  // Center the model - reset position first
   model.object.position.set(0, 0, 0);
   model.object.updateMatrixWorld(true);
   const bbox = new THREE.Box3().setFromObject(model.object);
