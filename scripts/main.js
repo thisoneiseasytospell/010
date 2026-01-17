@@ -1083,6 +1083,12 @@ function toggleMode() {
 
   if (isGridMode) {
     // GRID MODE - show all models in grid positions, scale down
+    // Pre-blur menu items immediately to prevent flash
+    if (modelListItems) {
+      const items = modelListItems.querySelectorAll('.model-list-item');
+      items.forEach(item => item.classList.add('blurring-out'));
+    }
+
     sceneModels.forEach((model, index) => {
       if (model && model.object) {
         model.object.visible = true;
@@ -2138,15 +2144,15 @@ function updateModelListVisibility() {
     return;
   }
 
-  // In grid mode: only show when scrolled (for go-to-top)
+  // In grid mode: only show when scrolled (for go-to-top only, no menu items)
   if (isGridMode) {
     if (isScrolledDown) {
-      modelList.classList.add('visible');
-      // Always hide items in grid mode
+      // Hide items FIRST before showing the list
       if (modelListItems) {
         const items = modelListItems.querySelectorAll('.model-list-item');
         items.forEach(item => item.classList.add('blurring-out'));
       }
+      modelList.classList.add('visible');
     } else {
       modelList.classList.remove('visible');
     }
