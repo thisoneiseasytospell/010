@@ -2090,15 +2090,31 @@ if (modelList) {
 function updateModelListVisibility() {
   if (!modelList) return;
   const isDesktop = window.innerWidth > 900;
+  const isScrolledDown = window.scrollY > 100;
 
-  // Hide model list when intro active or on mobile or in grid mode
-  if (introActive || !isDesktop || isGridMode) {
+  // Hide model list when intro active or on mobile
+  if (introActive || !isDesktop) {
     modelList.classList.remove('visible');
     return;
   }
 
-  // Solo mode only - show model list
-  modelList.classList.add('visible');
+  // In grid mode: only show when scrolled (for go-to-top)
+  // In solo mode: always show
+  if (isGridMode) {
+    if (isScrolledDown) {
+      modelList.classList.add('visible');
+      // Always hide items in grid mode
+      if (modelListItems) {
+        const items = modelListItems.querySelectorAll('.model-list-item');
+        items.forEach(item => item.classList.add('blurring-out'));
+      }
+    } else {
+      modelList.classList.remove('visible');
+    }
+  } else {
+    // Solo mode - show model list
+    modelList.classList.add('visible');
+  }
 }
 
 // Track state for sequential animation
@@ -2157,9 +2173,9 @@ function blurOutModelListItems() {
   });
 }
 
-// Show go-to-top when scrolled down in solo mode only
+// Show go-to-top when scrolled down (both grid and solo mode)
 function updateGoTopVisibility() {
-  if (!modelListGoTop || introActive || isGridMode) {
+  if (!modelListGoTop || introActive) {
     modelListGoTop?.classList.remove('visible');
     return;
   }
@@ -2168,14 +2184,14 @@ function updateGoTopVisibility() {
 
   if (isScrolledDown) {
     modelListGoTop.classList.add('visible');
-    // Blur out menu items when go-to-top shows
-    if (!modelListShowingGoTop && modelListItems) {
+    // In solo mode, blur out menu items when go-to-top shows
+    if (!isGridMode && !modelListShowingGoTop && modelListItems) {
       blurOutModelListItems();
     }
   } else {
     modelListGoTop.classList.remove('visible');
-    // Show menu items when go-to-top hides
-    if (modelListShowingGoTop && modelListItems) {
+    // In solo mode, show menu items when go-to-top hides
+    if (!isGridMode && modelListShowingGoTop && modelListItems) {
       showModelListItems();
     }
   }
