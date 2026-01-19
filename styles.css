@@ -572,14 +572,28 @@ body:not(.intro-active) {
 
 .text-word {
   opacity: 0;
-  filter: blur(4px);
-  transition: opacity 0.2s ease, filter 0.2s ease;
+  transform: translateY(2px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
   display: inline;
+  will-change: opacity, transform;
 }
 
 .text-word.word-revealed {
   opacity: 0.9;
-  filter: blur(0);
+  transform: translateY(0);
+}
+
+/* Desktop only: add blur effect for richer reveal */
+@media (min-width: 901px) {
+  .text-word {
+    filter: blur(4px);
+    transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+    will-change: opacity, transform, filter;
+  }
+
+  .text-word.word-revealed {
+    filter: blur(0);
+  }
 }
 
 .text-line strong {

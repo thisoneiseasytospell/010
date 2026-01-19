@@ -46,6 +46,9 @@ let introPromptHideTimer = null;
 let gridIntroRandomizationPending = false;
 let gridIntroAnimationId = 0;
 
+// Idle detection for power saving (declared early for use in applyModelWiggle)
+let isIdle = false;
+
 if (gridModeIcon) {
   gridModeIcon.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -200,9 +203,9 @@ const camera = new THREE.OrthographicCamera(
 camera.position.set(0, 0, 10);
 
 // Renderer
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Cap at 1.5x for performance
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 container.appendChild(renderer.domElement);
 
@@ -284,22 +287,13 @@ const discoModeValues = {
   rim: { color: 0xffffff, intensity: 0.3 }
 };
 
-// Weather state
-let currentWeather = {
-  condition: 'clear', // clear, clouds, rain, snow, fog
-  windSpeed: 0, // m/s
-  temperature: 15, // celsius
-  cloudCover: 0, // 0-100
-  isDay: true
-};
-let snowPrewarmScheduled = false;
+// Gentle wiggle effect - subtle idle animation
+let wiggleTime = 0;
+function applyModelWiggle() {
+  // Skip wiggle when idle to save CPU
+  if (isIdle) return;
 
-
-// Wind wiggle effect - works in all modes
-let windTime = 0;
-function applyWindWiggle(windSpeed) {
-  windTime += 0.016; // ~60fps
-  const wiggleStrength = Math.min(windSpeed / 20, 1) * 0.03; // Subtle wiggle
+  wiggleTime += 0.016; // ~60fps
 
   sceneModels.forEach((model, index) => {
     if (!model || !model.object || !model.object.visible) return;
@@ -310,11 +304,11 @@ function applyWindWiggle(windSpeed) {
     if (model.object.userData.gridIntroAnimating) return;
 
     // Each model wiggles slightly differently
-    const offset = index * 0.5;
-    const wiggle = Math.sin(windTime * 2 + offset) * wiggleStrength;
+    const offset = index * 0.7;
+    const wiggle = Math.sin(wiggleTime * 1.5 + offset) * 0.003;
 
-    // Apply wiggle to Z rotation
-    innerObj.rotation.z += wiggle * 0.1; // Additive, subtle
+    // Apply subtle wiggle to Z rotation
+    innerObj.rotation.z += wiggle;
   });
 }
 
@@ -333,60 +327,7 @@ function applyStudioLighting() {
   rimLight.intensity = studioLightValues.rim.intensity;
 }
 
-// Fetch Rotterdam weather from Open-Meteo (free, no API key)
-async function fetchRotterdamWeather() {
-  try {
-    // Rotterdam coordinates: 51.9225, 4.47917
-    const response = await fetch(
-      'https://api.open-meteo.com/v1/forecast?latitude=51.9225&longitude=4.47917&current=temperature_2m,weather_code,wind_speed_10m,cloud_cover,is_day'
-    );
-
-    if (!response.ok) throw new Error('Weather fetch failed');
-
-    const data = await response.json();
-    const current = data.current;
-
-    // Map WMO weather codes to conditions
-    // https://open-meteo.com/en/docs#weathervariables
-    const weatherCode = current.weather_code;
-    let condition = 'clear';
-
-    if (weatherCode === 0) condition = 'clear';
-    else if (weatherCode <= 3) condition = 'clouds';
-    else if (weatherCode >= 45 && weatherCode <= 48) condition = 'fog';
-    else if (weatherCode >= 51 && weatherCode <= 67) condition = 'rain';
-    else if (weatherCode >= 71 && weatherCode <= 77) condition = 'snow';
-    else if (weatherCode >= 80 && weatherCode <= 82) condition = 'rain';
-    else if (weatherCode >= 85 && weatherCode <= 86) condition = 'snow';
-    else if (weatherCode >= 95) condition = 'rain'; // thunderstorm
-
-    currentWeather = {
-      condition,
-      windSpeed: current.wind_speed_10m || 0,
-      temperature: current.temperature_2m || 15,
-      cloudCover: current.cloud_cover || 0,
-      isDay: current.is_day === 1
-    };
-
-    console.log('Rotterdam weather:', currentWeather);
-
-    if (isPartyMode) return;
-
-    // Apply precipitation (rain/snow) - lighting stays constant
-    if (condition === 'snow') {
-      setPrecipitation('snow');
-    } else if (condition === 'rain') {
-      setPrecipitation('rain');
-    } else {
-      setPrecipitation('none');
-    }
-
-  } catch (error) {
-    console.warn('Could not fetch weather:', error);
-    // Use defaults
-  }
-}
-
+let snowPrewarmScheduled = false;
 function scheduleSnowPrewarm() {
   if (snowPrewarmScheduled) return;
   snowPrewarmScheduled = true;
@@ -404,11 +345,8 @@ function scheduleSnowPrewarm() {
   }
 }
 
-// Initialize rain and fetch weather
+// Initialize snow system
 initSnow(scene, camera, sceneModels);
-fetchRotterdamWeather();
-// Refresh weather every 10 minutes
-setInterval(fetchRotterdamWeather, 10 * 60 * 1000);
 
 function flickerLights(callback) {
   const flickerCount = 4;
@@ -515,14 +453,8 @@ function togglePartyMode() {
       if (themeColorMeta) themeColorMeta.content = '#f7f6f3';
       // Restore studio lighting
       applyStudioLighting();
-      // Restore precipitation
-      if (currentWeather.condition === 'snow') {
-        setPrecipitation('snow');
-      } else if (currentWeather.condition === 'rain') {
-        setPrecipitation('rain');
-      } else {
-        setPrecipitation('none');
-      }
+      // Turn off precipitation when exiting disco mode
+      setPrecipitation('none');
     } else {
       isDarkMode = true;
       document.body.classList.add('dark-mode');
@@ -1474,6 +1406,11 @@ window.addEventListener('keydown', (event) => {
       console.log('Snow: ON');
     }
   }
+  // Toggle FPS display with F key
+  if (event.key === 'f' || event.key === 'F') {
+    event.preventDefault();
+    toggleFpsDisplay();
+  }
 });
 
 // Loading
@@ -1884,9 +1821,12 @@ function processWordQueue() {
   if (isProcessingWords || wordRevealQueue.length === 0) return;
 
   isProcessingWords = true;
+  const isMobile = window.innerWidth <= 900;
 
-  // Reveal 12 words at once
-  for (let i = 0; i < 12 && wordRevealQueue.length > 0; i++) {
+  // Reveal more words at once on mobile for snappier feel
+  const batchSize = isMobile ? 16 : 12;
+
+  for (let i = 0; i < batchSize && wordRevealQueue.length > 0; i++) {
     const word = wordRevealQueue.shift();
     if (word && word.classList.contains('word-pending')) {
       word.classList.remove('word-pending');
@@ -1894,11 +1834,19 @@ function processWordQueue() {
     }
   }
 
-  // Delay before next batch
-  setTimeout(() => {
-    isProcessingWords = false;
-    processWordQueue();
-  }, 60);
+  // Use requestAnimationFrame on mobile for smoother sync with scroll
+  // Desktop uses setTimeout for staggered reveal effect
+  if (isMobile) {
+    requestAnimationFrame(() => {
+      isProcessingWords = false;
+      processWordQueue();
+    });
+  } else {
+    setTimeout(() => {
+      isProcessingWords = false;
+      processWordQueue();
+    }, 60);
+  }
 }
 
 function setupWordReveal() {
@@ -2301,17 +2249,87 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 loadTextContent();
 
+// FPS counter
+let fpsDisplayVisible = false;
+let fpsElement = null;
+let fpsFrameCount = 0;
+let fpsLastTime = performance.now();
+let currentFps = 0;
+
+function createFpsElement() {
+  fpsElement = document.createElement('div');
+  fpsElement.id = 'fps-display';
+  fpsElement.style.cssText = `
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #0f0;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    z-index: 9999;
+    display: none;
+  `;
+  document.body.appendChild(fpsElement);
+}
+
+function toggleFpsDisplay() {
+  if (!fpsElement) createFpsElement();
+  fpsDisplayVisible = !fpsDisplayVisible;
+  fpsElement.style.display = fpsDisplayVisible ? 'block' : 'none';
+  console.log('FPS display:', fpsDisplayVisible ? 'ON' : 'OFF');
+}
+
+function updateFpsDisplay() {
+  if (!fpsDisplayVisible || !fpsElement) return;
+
+  fpsFrameCount++;
+  const now = performance.now();
+  const elapsed = now - fpsLastTime;
+
+  if (elapsed >= 500) { // Update every 500ms
+    currentFps = Math.round((fpsFrameCount * 1000) / elapsed);
+    fpsFrameCount = 0;
+    fpsLastTime = now;
+
+    const resolution = `${renderer.domElement.width}x${renderer.domElement.height}`;
+    const state = isIdle ? 'IDLE' : (isSceneVisible ? 'ACTIVE' : 'HIDDEN');
+    fpsElement.innerHTML = `FPS: ${currentFps}<br>Res: ${resolution}<br>State: ${state}`;
+  }
+}
+
 // Visibility handling - pause rendering when tab is hidden or models not in viewport
 let isPageVisible = true;
 let isSceneVisible = true;
 let animationFrameId = null;
 let lastFrameTime = 0;
-const THROTTLED_FRAME_INTERVAL = 100; // ms - when scene not visible, render at 10fps max
+const BASE_FRAME_INTERVAL = 16; // ms - cap at ~60fps
+const IDLE_FRAME_INTERVAL = 200; // ms - 5fps when idle
+
+// Idle detection - reduce rendering when user isn't interacting
+let lastInteractionTime = Date.now();
+// isIdle is declared at top of file
+const IDLE_TIMEOUT = 3000; // 3 seconds of no interaction = idle
+
+function markUserActive() {
+  lastInteractionTime = Date.now();
+  isIdle = false;
+}
+
+// Track user interactions
+['mousemove', 'mousedown', 'touchstart', 'touchmove', 'wheel', 'keydown'].forEach(eventType => {
+  window.addEventListener(eventType, markUserActive, { passive: true });
+});
 
 document.addEventListener('visibilitychange', () => {
   isPageVisible = !document.hidden;
-  if (isPageVisible && !animationFrameId) {
-    animationFrameId = requestAnimationFrame(animate);
+  if (isPageVisible) {
+    markUserActive();
+    if (!animationFrameId) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
   }
 });
 
@@ -2333,16 +2351,29 @@ function animate() {
 
   animationFrameId = requestAnimationFrame(animate);
 
+  const now = performance.now();
+
+  // Check idle state
+  if (!isIdle && Date.now() - lastInteractionTime > IDLE_TIMEOUT) {
+    isIdle = true;
+  }
+
   // Check if scene is visible and throttle if not (but keep snow running in disco mode)
   isSceneVisible = checkSceneVisibility();
   const keepSnowRunning = isPartyMode && getCurrentPrecipType() === 'snow';
+
+  // Skip rendering entirely when scene not visible
   if (!isSceneVisible && !keepSnowRunning) {
-    const now = performance.now();
-    if (now - lastFrameTime < THROTTLED_FRAME_INTERVAL) {
-      return; // Skip this frame
-    }
-    lastFrameTime = now;
+    return; // 0fps when not visible
   }
+
+  // Determine frame interval
+  const frameInterval = (isIdle && !keepSnowRunning) ? IDLE_FRAME_INTERVAL : BASE_FRAME_INTERVAL;
+
+  if (now - lastFrameTime < frameInterval) {
+    return; // Skip this frame
+  }
+  lastFrameTime = now;
 
   const config = getGridConfig();
 
@@ -2516,17 +2547,29 @@ function animate() {
 
   updateSoloInfoTransform();
 
-  // Weather effects
-  updatePrecipitation(currentWeather.windSpeed, getCurrentPrecipType() === 'snow');
-  applyWindWiggle(currentWeather.windSpeed);
+  // Snow particles (if active)
+  updatePrecipitation(5, getCurrentPrecipType() === 'snow');
+
+  // Subtle model wiggle
+  applyModelWiggle();
 
   renderer.render(scene, camera);
+
+  // Update FPS display if visible
+  updateFpsDisplay();
 }
 
 animate();
 
-// Handle resize
+// Handle resize with debouncing on mobile to prevent scroll-triggered glitches
+let resizeDebounceTimer = null;
+let lastResizeWidth = window.innerWidth;
+
 window.addEventListener('resize', () => {
+  const isMobile = window.innerWidth <= 900;
+  const widthChanged = Math.abs(window.innerWidth - lastResizeWidth) > 50;
+
+  // Camera updates are always immediate
   const aspect = window.innerWidth / window.innerHeight;
   camera.left = baseFrustumSize * aspect / -2;
   camera.right = baseFrustumSize * aspect / 2;
@@ -2535,6 +2578,23 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 
-  // Update grid layout for orientation changes
-  updateGridLayout();
+  // On mobile, debounce grid layout updates to avoid scroll-triggered glitches
+  // URL bar hide/show causes resize events during scroll - only respond to real orientation changes
+  if (isMobile && !widthChanged) {
+    // Skip layout update for height-only changes (URL bar)
+    return;
+  }
+
+  if (isMobile) {
+    // Debounce layout updates on mobile
+    if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+    resizeDebounceTimer = setTimeout(() => {
+      lastResizeWidth = window.innerWidth;
+      updateGridLayout();
+    }, 150);
+  } else {
+    // Desktop: immediate update
+    lastResizeWidth = window.innerWidth;
+    updateGridLayout();
+  }
 });
