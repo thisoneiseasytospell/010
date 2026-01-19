@@ -109,14 +109,17 @@ body:not(.intro-active) {
 }
 
 #intro-cursor-prompt.visible {
-  opacity: 1;
-  animation: introPromptBlink 12s ease-in-out infinite;
+  animation: introPromptBlink 2s ease-in-out forwards;
 }
 
 @keyframes introPromptBlink {
-  0%, 83% { opacity: 0; }
-  85% { opacity: 1; }
-  100% { opacity: 0; }
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  20% { opacity: 0; }
+  30% { opacity: 1; }
+  40% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 1; }
 }
 
 #scene-container.physics-mode {

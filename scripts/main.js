@@ -143,11 +143,12 @@ let mobileSwipeDeltaY = 0;
 let isMobileSwiping = false;
 let mobileSwipeDirection = null; // 'horizontal' or 'vertical'
 
-// Mobile swipe hint (nudge)
+// Mobile swipe hint (shows adjacent models)
 let mobileSwipeHintTimer = null;
 let mobileSwipeHintActive = false;
 let mobileSwipeHintPhase = 0; // Animation phase
 const SWIPE_HINT_DELAY = 4000; // 4 seconds before showing hint
+const SWIPE_HINT_OFFSET = 1.5; // How far to slide to reveal adjacent models
 
 function resetMobileSwipeHint() {
   if (mobileSwipeHintTimer) {
@@ -156,12 +157,16 @@ function resetMobileSwipeHint() {
   mobileSwipeHintActive = false;
   mobileSwipeHintPhase = 0;
 
+  // Hide adjacent models
+  hideAdjacentModels();
+
   // Start new timer
   const config = getGridConfig();
-  if (config.isMobileSolo && !introActive) {
+  if (config.isMobileSolo && !introActive && sceneModels.length > 1) {
     mobileSwipeHintTimer = setTimeout(() => {
       mobileSwipeHintActive = true;
       mobileSwipeHintPhase = 0;
+      setupAdjacentModelsForHint();
     }, SWIPE_HINT_DELAY);
   }
 }
@@ -171,6 +176,58 @@ function startMobileSwipeHint() {
   if (config.isMobileSolo && !introActive) {
     resetMobileSwipeHint();
   }
+}
+
+function getAdjacentIndices() {
+  const total = sceneModels.length;
+  const prev = (mobileCurrentModelIndex - 1 + total) % total;
+  const next = (mobileCurrentModelIndex + 1) % total;
+  return { prev, next };
+}
+
+function setupAdjacentModelsForHint() {
+  if (sceneModels.length <= 1) return;
+
+  const { prev, next } = getAdjacentIndices();
+  const config = getGridConfig();
+
+  // Setup and position adjacent models off-screen
+  [prev, next].forEach((idx, i) => {
+    const model = sceneModels[idx];
+    if (!model || !model.object) return;
+
+    const innerObj = model.object.userData.innerObject;
+    if (!innerObj) return;
+
+    // Scale for mobile
+    if (model.object.userData.baseScale) {
+      const mobileScale = model.object.userData.baseScale * (config.modelSize / GRID_MODEL_SIZE);
+      innerObj.scale.setScalar(mobileScale);
+    }
+
+    // Reset rotation
+    const baseRotationY = model.object.userData.baseRotationY || 0;
+    const baseRotationX = model.object.userData.baseRotationX || 0;
+    innerObj.rotation.set(baseRotationX, baseRotationY, 0);
+
+    // Position off-screen (left for prev, right for next)
+    const xOffset = i === 0 ? -4 : 4;
+    model.object.position.set(xOffset, 0, 0);
+    model.object.visible = true;
+  });
+}
+
+function hideAdjacentModels() {
+  if (sceneModels.length <= 1) return;
+
+  const { prev, next } = getAdjacentIndices();
+  [prev, next].forEach((idx) => {
+    const model = sceneModels[idx];
+    if (model && model.object && idx !== mobileCurrentModelIndex) {
+      model.object.visible = false;
+      model.object.position.set(0, 0, 0);
+    }
+  });
 }
 
 function showMobileHeader() {
@@ -2362,18 +2419,27 @@ function animate() {
   isSceneVisible = checkSceneVisibility();
   const keepSnowRunning = isPartyMode && getCurrentPrecipType() === 'snow';
 
-  // Skip rendering entirely when scene not visible
-  if (!isSceneVisible && !keepSnowRunning) {
-    return; // 0fps when not visible
-  }
+  const isMobile = window.innerWidth <= 900;
 
-  // Determine frame interval
-  const frameInterval = (isIdle && !keepSnowRunning) ? IDLE_FRAME_INTERVAL : BASE_FRAME_INTERVAL;
+  // On mobile: just cap at 60fps, no other throttling
+  // On desktop: throttle when not visible or idle
+  if (!isMobile) {
+    if (!isSceneVisible && !keepSnowRunning) {
+      return; // 0fps when not visible (desktop only)
+    }
 
-  if (now - lastFrameTime < frameInterval) {
-    return; // Skip this frame
+    const frameInterval = (isIdle && !keepSnowRunning) ? IDLE_FRAME_INTERVAL : BASE_FRAME_INTERVAL;
+    if (now - lastFrameTime < frameInterval) {
+      return;
+    }
+    lastFrameTime = now;
+  } else {
+    // Mobile: simple 60fps cap
+    if (now - lastFrameTime < BASE_FRAME_INTERVAL) {
+      return;
+    }
+    lastFrameTime = now;
   }
-  lastFrameTime = now;
 
   const config = getGridConfig();
 
@@ -2406,17 +2472,34 @@ function animate() {
           targetRotationX = baseRotationX + dampedBeta * maxTiltX;
         }
 
-        // Swipe hint nudge animation
+        // Swipe hint animation - slide to reveal adjacent models
         if (mobileSwipeHintActive) {
-          mobileSwipeHintPhase += 0.12;
-          // Nudge left-right twice then stop
-          if (mobileSwipeHintPhase < Math.PI * 4) {
-            const nudgeAmount = Math.sin(mobileSwipeHintPhase) * 0.15; // ~8 degrees
-            targetRotationY += nudgeAmount;
+          mobileSwipeHintPhase += 0.08;
+
+          // Slide left-right once then stop
+          if (mobileSwipeHintPhase < Math.PI * 2) {
+            const slideOffset = Math.sin(mobileSwipeHintPhase) * SWIPE_HINT_OFFSET;
+
+            // Move current model
+            currentModel.object.position.x = slideOffset;
+
+            // Move adjacent models with current
+            const { prev, next } = getAdjacentIndices();
+            const prevModel = sceneModels[prev];
+            const nextModel = sceneModels[next];
+
+            if (prevModel && prevModel.object) {
+              prevModel.object.position.x = slideOffset - 4;
+            }
+            if (nextModel && nextModel.object) {
+              nextModel.object.position.x = slideOffset + 4;
+            }
           } else {
-            // Reset hint after animation completes
+            // Reset positions and hide adjacent models
+            currentModel.object.position.x = 0;
             mobileSwipeHintActive = false;
             mobileSwipeHintPhase = 0;
+            hideAdjacentModels();
             // Restart timer for next hint
             resetMobileSwipeHint();
           }
