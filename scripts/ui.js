@@ -433,7 +433,6 @@ function processWordQueue() {
     state.isProcessingWords = false;
     processWordQueue();
   }, 60);
-  }
 }
 
 export function setupWordReveal() {
