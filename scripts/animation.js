@@ -215,8 +215,7 @@ export function animate() {
             state.mobileSwipeHintActive = false;
             state.mobileSwipeHintPhase = 0;
             hideAdjacentModels();
-            // Restart timer for next hint
-            resetMobileSwipeHint();
+            // Don't restart - hint only shows once per session
           }
         }
 

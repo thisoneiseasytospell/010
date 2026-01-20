@@ -115,12 +115,13 @@ export function resetMobileSwipeHint() {
   // Hide adjacent models
   hideAdjacentModels();
 
-  // Start new timer
+  // Only start hint timer if not shown yet (show only once per session)
   const config = getGridConfig();
-  if (config.isMobileSolo && !state.introActive && sceneModels.length > 1) {
+  if (config.isMobileSolo && !state.introActive && sceneModels.length > 1 && !state.mobileSwipeHintShown) {
     state.mobileSwipeHintTimer = setTimeout(() => {
       state.mobileSwipeHintActive = true;
       state.mobileSwipeHintPhase = 0;
+      state.mobileSwipeHintShown = true; // Mark as shown
       setupAdjacentModelsForHint();
     }, SWIPE_HINT_DELAY);
   }

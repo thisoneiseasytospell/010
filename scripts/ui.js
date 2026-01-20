@@ -473,55 +473,9 @@ export function setupWordReveal() {
   textLines.forEach(line => observer.observe(line));
 }
 
-export async function loadTextContent() {
-  if (!textContent) return;
-
-  try {
-    const response = await fetch('./text.txt');
-    if (!response.ok) throw new Error('Failed to load text.txt');
-    const text = await response.text();
-
-    // Split into lines
-    const lines = text.split('\n');
-    let wordIndex = 0;
-
-    lines.forEach((line, lineIndex) => {
-      const p = document.createElement('p');
-      p.className = 'text-line';
-      p.dataset.lineIndex = lineIndex;
-
-      if (line.trim() === '') {
-        // Empty line becomes a spacer
-        p.innerHTML = '&nbsp;';
-        p.classList.add('spacer');
-      } else {
-        // Parse **bold** and wrap each word in a span
-        const parsedLine = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        // Split by spaces but keep HTML tags intact
-        const words = parsedLine.split(/(\s+)/);
-
-        words.forEach((word) => {
-          if (word.trim() === '') {
-            // Keep whitespace
-            p.appendChild(document.createTextNode(word));
-          } else {
-            const span = document.createElement('span');
-            span.className = 'text-word';
-            span.dataset.index = wordIndex++;
-            span.innerHTML = word;
-            p.appendChild(span);
-          }
-        });
-      }
-
-      textContent.appendChild(p);
-    });
-
-    // Setup intersection observer for word-by-word reveal
-    setupWordReveal();
-  } catch (error) {
-    console.warn('Could not load text.txt:', error);
-  }
+export function loadTextContent() {
+  // Text is now static HTML - just setup the word reveal observer
+  setupWordReveal();
 }
 
 // Setup scroll listener for UI updates

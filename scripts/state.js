@@ -59,6 +59,7 @@ export const state = {
   mobileSwipeHintTimer: null,
   mobileSwipeHintActive: false,
   mobileSwipeHintPhase: 0,
+  mobileSwipeHintShown: false, // Only show hint once per session
 
   // Loading state
   modelsLoaded: 0,
