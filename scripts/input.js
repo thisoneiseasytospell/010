@@ -332,9 +332,9 @@ export function onTouchStart(event) {
     touchState.startTime = Date.now();
     touchState.dragging = false;
 
-    // Mobile solo mode - setup swipe tracking
+    // Mobile solo mode - setup swipe tracking (but not during intro)
     const config = getGridConfig();
-    if (config.isMobileSolo) {
+    if (config.isMobileSolo && !state.introActive) {
       const sceneRect = container?.getBoundingClientRect();
       const touchInScene = sceneRect && touch.clientY < sceneRect.bottom && touch.clientY > sceneRect.top;
 
