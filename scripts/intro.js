@@ -26,6 +26,34 @@ export function clearIntroPromptTimers() {
     clearTimeout(state.introPromptHideTimer);
     state.introPromptHideTimer = null;
   }
+  if (state.introPromptTimer) {
+    clearTimeout(state.introPromptTimer);
+    state.introPromptTimer = null;
+  }
+}
+
+// Show intro prompt immediately (called when user tries to scroll)
+export function showIntroPromptNow() {
+  if (!state.introActive || !introPrompt) return;
+  // Clear the 5-second timer since we're showing now
+  if (state.introPromptTimer) {
+    clearTimeout(state.introPromptTimer);
+    state.introPromptTimer = null;
+  }
+  introPrompt.classList.add('visible');
+}
+
+// Setup listener for scroll attempts during intro
+export function setupIntroScrollDetection() {
+  const onScrollAttempt = () => {
+    if (state.introActive) {
+      showIntroPromptNow();
+    }
+  };
+
+  // Detect scroll attempts via wheel, touchmove, and scroll events
+  window.addEventListener('wheel', onScrollAttempt, { passive: true });
+  window.addEventListener('touchmove', onScrollAttempt, { passive: true });
 }
 
 export function scheduleIntroPromptHide() {

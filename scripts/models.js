@@ -85,12 +85,17 @@ export function checkLoadingComplete() {
     state.hasCompletedInitialLoad = true;
     prewarmGridModels();
     scheduleSnowPrewarm();
-    // Show intro prompt only after loading is complete
+    // Setup intro prompt (will be shown after delay or on scroll attempt)
     const introPrompt = document.getElementById('intro-cursor-prompt');
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     if (introPrompt && state.introActive) {
       introPrompt.textContent = isTouchDevice ? 'tap to enter' : 'click to enter';
-      introPrompt.classList.add('visible');
+      // Show after 5 seconds
+      state.introPromptTimer = setTimeout(() => {
+        if (state.introActive) {
+          introPrompt.classList.add('visible');
+        }
+      }, 5000);
     }
   }
 }

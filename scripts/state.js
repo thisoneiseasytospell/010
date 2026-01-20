@@ -39,6 +39,7 @@ export const state = {
   // Intro state
   introJustExited: false,
   introPromptHideTimer: null,
+  introPromptTimer: null,
   gridIntroRandomizationPending: false,
   gridIntroAnimationId: 0,
 

@@ -92,37 +92,28 @@ body:not(.intro-active) {
 
 #intro-cursor-prompt {
   position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-family: 'WTSkrappaTRIAL', 'Inter', sans-serif;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   letter-spacing: 0.2em;
   text-transform: lowercase;
-  color: rgba(8, 9, 13, 0.8);
-  padding: 0.6rem 1.2rem;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border-radius: 2rem;
+  color: rgba(8, 9, 13, 0.7);
+  background: rgba(255, 255, 255, 0.5);
   border: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.4s ease;
+  z-index: 2001;
 }
 
 #intro-cursor-prompt.visible {
-  animation: introPromptBlink 2s ease-in-out forwards;
-}
-
-@keyframes introPromptBlink {
-  0% { opacity: 0; }
-  10% { opacity: 1; }
-  20% { opacity: 0; }
-  30% { opacity: 1; }
-  40% { opacity: 0; }
-  50% { opacity: 1; }
-  100% { opacity: 1; }
+  opacity: 1;
 }
 
 #scene-container.physics-mode {
