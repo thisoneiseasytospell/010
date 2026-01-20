@@ -189,7 +189,7 @@ export function animate() {
 
         // Swipe hint animation - slide to reveal adjacent models
         if (state.mobileSwipeHintActive) {
-          state.mobileSwipeHintPhase += 0.08;
+          state.mobileSwipeHintPhase += 0.04; // Slower animation
 
           // Slide left-right once then stop
           if (state.mobileSwipeHintPhase < Math.PI * 2) {
@@ -198,16 +198,17 @@ export function animate() {
             // Move current model
             currentModel.object.position.x = slideOffset;
 
-            // Move adjacent models with current
+            // Move adjacent models with more spacing
             const { prev, next } = getAdjacentIndices();
             const prevModel = sceneModels[prev];
             const nextModel = sceneModels[next];
+            const adjacentSpacing = 6; // More space between models
 
             if (prevModel && prevModel.object) {
-              prevModel.object.position.x = slideOffset - 4;
+              prevModel.object.position.x = slideOffset - adjacentSpacing;
             }
             if (nextModel && nextModel.object) {
-              nextModel.object.position.x = slideOffset + 4;
+              nextModel.object.position.x = slideOffset + adjacentSpacing;
             }
           } else {
             // Reset positions and hide adjacent models

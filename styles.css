@@ -99,9 +99,12 @@ body:not(.intro-active) {
   font-size: 0.7rem;
   letter-spacing: 0.2em;
   text-transform: lowercase;
-  color: rgba(8, 9, 13, 0.5);
-  padding: 0;
-  background: none;
+  color: rgba(8, 9, 13, 0.8);
+  padding: 0.6rem 1.2rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 2rem;
   border: none;
   opacity: 0;
   pointer-events: none;

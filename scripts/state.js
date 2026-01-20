@@ -124,7 +124,7 @@ export const GRID_ROTATION_OVERRIDE_DEG = {};
 
 // Swipe hint constants
 export const SWIPE_HINT_DELAY = 4000; // 4 seconds before showing hint
-export const SWIPE_HINT_OFFSET = 1.5; // How far to slide to reveal adjacent models
+export const SWIPE_HINT_OFFSET = 2.0; // How far to slide to reveal adjacent models
 
 // Touch constants
 export const TAP_THRESHOLD = 200; // ms - taps shorter than this trigger interaction
