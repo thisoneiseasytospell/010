@@ -404,9 +404,23 @@ function processWordQueue() {
   state.isProcessingWords = true;
   const isMobile = window.innerWidth <= 900;
 
-  // Reveal more words at once on mobile for snappier feel
-  const batchSize = isMobile ? 16 : 12;
+  // On mobile: reveal ALL words immediately to avoid RAF competition with scroll
+  // On desktop: staggered reveal for effect
+  if (isMobile) {
+    // Reveal everything at once - no loop, no RAF
+    while (state.wordRevealQueue.length > 0) {
+      const word = state.wordRevealQueue.shift();
+      if (word && word.classList.contains('word-pending')) {
+        word.classList.remove('word-pending');
+        word.classList.add('word-revealed');
+      }
+    }
+    state.isProcessingWords = false;
+    return;
+  }
 
+  // Desktop: staggered reveal
+  const batchSize = 12;
   for (let i = 0; i < batchSize && state.wordRevealQueue.length > 0; i++) {
     const word = state.wordRevealQueue.shift();
     if (word && word.classList.contains('word-pending')) {
@@ -415,18 +429,10 @@ function processWordQueue() {
     }
   }
 
-  // Use requestAnimationFrame on mobile for smoother sync with scroll
-  // Desktop uses setTimeout for staggered reveal effect
-  if (isMobile) {
-    requestAnimationFrame(() => {
-      state.isProcessingWords = false;
-      processWordQueue();
-    });
-  } else {
-    setTimeout(() => {
-      state.isProcessingWords = false;
-      processWordQueue();
-    }, 60);
+  setTimeout(() => {
+    state.isProcessingWords = false;
+    processWordQueue();
+  }, 60);
   }
 }
 
@@ -480,35 +486,44 @@ export function loadTextContent() {
 
 // Setup scroll listener for UI updates
 export function setupScrollListener() {
-  // Track scroll direction
-  window.addEventListener('scroll', () => {
-    state.scrollDirection = window.scrollY > state.lastScrollY ? 'down' : 'up';
-    state.lastScrollY = window.scrollY;
-  }, { passive: true });
-
+  // Track scroll direction - merged into single listener below
   // Scroll listener for header and solo info state
   let scrollThrottleTimer = null;
+  let lastMobileUpdate = 0;
+
+  // Cache text section reference for mobile
+  const textSection = document.getElementById('text-section');
+
   window.addEventListener('scroll', () => {
-    // Throttle scroll handler to reduce jank
-    if (scrollThrottleTimer) return;
-    scrollThrottleTimer = setTimeout(() => {
-      scrollThrottleTimer = null;
-    }, 16); // ~60fps
+    // Always track scroll direction (cheap operation)
+    state.scrollDirection = window.scrollY > state.lastScrollY ? 'down' : 'up';
+    state.lastScrollY = window.scrollY;
 
     const isMobile = window.innerWidth <= 900;
 
-    // Desktop-only updates (these do getBoundingClientRect which is expensive)
-    if (!isMobile) {
+    if (isMobile) {
+      // Mobile: much slower throttle (150ms) - only update go-to-top visibility
+      const now = Date.now();
+      if (now - lastMobileUpdate < 150) return;
+      lastMobileUpdate = now;
+
+      // Inline the check to avoid function call overhead
+      if (mobileGoTop && textSection) {
+        const isInTextSection = textSection.getBoundingClientRect().top < window.innerHeight * 0.5;
+        mobileGoTop.classList.toggle('visible', isInTextSection);
+      }
+    } else {
+      // Desktop: normal throttle
+      if (scrollThrottleTimer) return;
+      scrollThrottleTimer = setTimeout(() => {
+        scrollThrottleTimer = null;
+      }, 16);
+
       updateModelListVisibility();
       updateGoTopVisibility();
       updateHeaderVisibility();
       updateSoloInfoState();
       updateModelListState();
-    }
-
-    // On mobile, update go-to-top visibility
-    if (isMobile) {
-      updateMobileGoTopVisibility();
     }
   }, { passive: true });
 }

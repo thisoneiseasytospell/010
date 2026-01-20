@@ -573,28 +573,32 @@ body:not(.intro-active) {
   height: 1rem;
 }
 
-.text-word {
-  opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  display: inline;
-  will-change: opacity, transform;
+/* Mobile: instant reveal, no transitions to avoid scroll jank */
+@media (max-width: 900px) {
+  .text-word {
+    opacity: 0;
+    display: inline;
+  }
+
+  .text-word.word-revealed {
+    opacity: 0.9;
+  }
 }
 
-.text-word.word-revealed {
-  opacity: 0.9;
-  transform: translateY(0);
-}
-
-/* Desktop only: add blur effect for richer reveal */
+/* Desktop: animated reveal with blur */
 @media (min-width: 901px) {
   .text-word {
+    opacity: 0;
+    transform: translateY(2px);
     filter: blur(4px);
     transition: opacity 0.2s ease, transform 0.2s ease, filter 0.2s ease;
+    display: inline;
     will-change: opacity, transform, filter;
   }
 
   .text-word.word-revealed {
+    opacity: 0.9;
+    transform: translateY(0);
     filter: blur(0);
   }
 }
