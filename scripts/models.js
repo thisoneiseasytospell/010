@@ -90,12 +90,10 @@ export function checkLoadingComplete() {
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     if (introPrompt && state.introActive) {
       introPrompt.textContent = isTouchDevice ? 'tap to enter' : 'click to enter';
-      // Show after 12 seconds
-      state.introPromptTimer = setTimeout(() => {
-        if (state.introActive) {
-          introPrompt.classList.add('visible');
-        }
-      }, 12000);
+      // Show immediately - CSS animation handles the 11sec wait + blink
+      if (state.introActive) {
+        introPrompt.classList.add('visible');
+      }
     }
   }
 }
