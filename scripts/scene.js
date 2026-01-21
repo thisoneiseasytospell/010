@@ -47,10 +47,10 @@ gltfLoader.setDRACOLoader(dracoLoader);
 export const objLoader = new OBJLoader();
 export const mtlLoader = new MTLLoader();
 
-// Cleanup on page unload to prevent memory leaks
-window.addEventListener('beforeunload', () => {
+// Cleanup function for memory management
+function cleanupScene() {
   // Dispose renderer
-  renderer.dispose();
+  if (renderer) renderer.dispose();
 
   // Dispose all geometries and materials in scene
   scene.traverse((object) => {
@@ -70,8 +70,13 @@ window.addEventListener('beforeunload', () => {
   });
 
   // Dispose DRACO decoder
-  dracoLoader.dispose();
-});
+  if (dracoLoader) dracoLoader.dispose();
+}
+
+// Cleanup on page unload to prevent memory leaks
+// Use both events for cross-browser compatibility (iOS Safari uses pagehide)
+window.addEventListener('beforeunload', cleanupScene);
+window.addEventListener('pagehide', cleanupScene);
 
 // Lighting - Bright studio setup for ceramic look
 export const ambient = new THREE.AmbientLight(0xffffff, 0.8);
@@ -322,6 +327,11 @@ let snowPrewarmScheduled = false;
 
 export function scheduleSnowPrewarm() {
   if (snowPrewarmScheduled) return;
+
+  // Skip snow prewarming on mobile to reduce memory pressure
+  const isMobile = window.innerWidth <= 900;
+  if (isMobile) return;
+
   snowPrewarmScheduled = true;
   const run = () => prewarmSnow(renderer);
   if (typeof window.requestIdleCallback === 'function') {

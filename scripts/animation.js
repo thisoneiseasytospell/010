@@ -123,6 +123,8 @@ export function animate() {
 
   state.animationFrameId = requestAnimationFrame(animate);
 
+  try {
+
   const now = performance.now();
 
   // Check idle state
@@ -355,6 +357,10 @@ export function animate() {
 
   // Update FPS display if visible
   updateFpsDisplay(renderer, state.isSceneVisible);
+  } catch (error) {
+    console.error('Animation loop error:', error);
+    // Don't let errors crash the loop - continue on next frame
+  }
 }
 
 // Start the animation loop

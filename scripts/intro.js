@@ -76,16 +76,26 @@ export function setupIntroVideo() {
 
   introVideo.addEventListener('canplay', hideLoading, { once: true });
   introVideo.addEventListener('canplaythrough', hideLoading, { once: true });
+  introVideo.addEventListener('error', hideLoading, { once: true });
 
-  // Start loading
-  introVideo.load();
+  // Don't call load() - let browser handle it naturally with autoplay
+  // This reduces memory pressure on Safari mobile
 
   // Fallback: hide loading after 5 seconds even if video hasn't loaded
-  setTimeout(() => {
-    if (introLoading && !introLoading.classList.contains('hidden')) {
-      introLoading.classList.add('hidden');
-    }
-  }, 5000);
+  setTimeout(hideLoading, 5000);
+
+  // Cleanup on page unload to prevent memory leaks
+  window.addEventListener('beforeunload', cleanupIntroVideo);
+  window.addEventListener('pagehide', cleanupIntroVideo);
+}
+
+// Cleanup video resources
+function cleanupIntroVideo() {
+  if (introVideo) {
+    introVideo.pause();
+    introVideo.removeAttribute('src');
+    introVideo.load(); // Reset video element
+  }
 }
 
 export function scheduleIntroPromptHide() {

@@ -232,6 +232,7 @@ export function loadModel(modelConfig, modelIndex) {
       undefined,
       (error) => {
         console.error('Error loading GLB:', error);
+        checkLoadingComplete(); // Still count as loaded to avoid stuck state
       }
     );
     return;
@@ -258,6 +259,7 @@ export function loadModel(modelConfig, modelIndex) {
       undefined,
       (error) => {
         console.error('Error loading OBJ:', error);
+        checkLoadingComplete(); // Still count as loaded to avoid stuck state
       }
     );
   };
