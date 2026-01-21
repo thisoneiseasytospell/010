@@ -56,6 +56,38 @@ export function setupIntroScrollDetection() {
   window.addEventListener('touchmove', onScrollAttempt, { passive: true });
 }
 
+// Setup intro video with correct source based on device
+export function setupIntroVideo() {
+  if (!introVideo) return;
+
+  const introLoading = document.getElementById('intro-loading');
+  const isMobile = window.innerWidth <= 900;
+
+  // Set video source based on device
+  const videoSrc = isMobile ? './demo-mobile.mp4' : './demo.mp4';
+  introVideo.src = videoSrc;
+
+  // Hide loading when video can play
+  const hideLoading = () => {
+    if (introLoading) {
+      introLoading.classList.add('hidden');
+    }
+  };
+
+  introVideo.addEventListener('canplay', hideLoading, { once: true });
+  introVideo.addEventListener('canplaythrough', hideLoading, { once: true });
+
+  // Start loading
+  introVideo.load();
+
+  // Fallback: hide loading after 5 seconds even if video hasn't loaded
+  setTimeout(() => {
+    if (introLoading && !introLoading.classList.contains('hidden')) {
+      introLoading.classList.add('hidden');
+    }
+  }, 5000);
+}
+
 export function scheduleIntroPromptHide() {
   if (!introPrompt) return;
   if (state.introPromptHideTimer) {

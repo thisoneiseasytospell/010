@@ -29,7 +29,8 @@ import {
   triggerGridIntroRandomization,
   setUpdateModelInfoDisplay as setIntroUpdateModelInfoDisplay,
   setStartMobileSwipeHint,
-  setupIntroScrollDetection
+  setupIntroScrollDetection,
+  setupIntroVideo
 } from './intro.js';
 import {
   setupEventListeners,
@@ -166,6 +167,7 @@ setupScrollListener();
 setupActivityTracking();
 setupResizeHandler();
 setupIntroScrollDetection();
+setupIntroVideo();
 
 // Initialize gyro permissions
 initGyroPermissions();

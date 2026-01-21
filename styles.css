@@ -82,12 +82,36 @@ body:not(.intro-active) {
 }
 
 #intro-overlay video {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  max-width: 1280px;
-  aspect-ratio: 16 / 9;
-  height: auto;
-  box-shadow: none;
-  pointer-events: none; /* Let touches pass through to overlay */
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+#intro-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'WTSkrappaTRIAL', 'Inter', sans-serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: lowercase;
+  color: rgba(8, 9, 13, 0.5);
+  animation: loadingBlink 1s ease-in-out infinite;
+  z-index: 1;
+}
+
+#intro-loading.hidden {
+  display: none;
+}
+
+@keyframes loadingBlink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 #intro-cursor-prompt {
