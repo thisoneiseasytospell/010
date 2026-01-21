@@ -45,7 +45,6 @@ body.intro-active {
   overscroll-behavior: none;
   position: fixed;
   width: 100%;
-  background: #000000 !important; /* Black background during intro */
 }
 
 body:not(.intro-active) {
@@ -62,14 +61,12 @@ body:not(.intro-active) {
 
 #intro-overlay {
   position: fixed;
-  /* Extend beyond viewport to cover safe areas */
-  top: -50px;
-  left: -50px;
-  right: -50px;
-  bottom: -50px;
-  width: auto;
-  height: auto;
-  background: #000000;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: #f7f6f3; /* Match body background */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,7 +90,7 @@ body:not(.intro-active) {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
-  object-fit: cover;
+  object-fit: fill; /* Stretch to fill entire viewport */
   pointer-events: none;
 }
 
