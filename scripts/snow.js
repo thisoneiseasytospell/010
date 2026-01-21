@@ -362,7 +362,12 @@ export function setPrecipitation(type, options = {}) {
     snowParticles.material.size = isMobile ? 3 : 2;
     snowParticles.material.opacity = 0.9;
     if (accumulate) {
-      updateSnowAccumulation();
+      // Defer accumulation on mobile to avoid blocking disco mode start
+      if (isMobile) {
+        setTimeout(updateSnowAccumulation, 100);
+      } else {
+        updateSnowAccumulation();
+      }
     } else {
       hideSnowAccumulation();
     }

@@ -65,7 +65,7 @@ export function setupIntroVideo() {
   const isMobile = window.innerWidth <= 900;
 
   // Set video source based on device
-  const videoSrc = isMobile ? './o916demo.mp4' : './demonew.mp4';
+  const videoSrc = isMobile ? './o f917.mp4' : './demonew.mp4';
   introVideo.src = videoSrc;
 
   // Hide loading when video can play

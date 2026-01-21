@@ -327,18 +327,21 @@ let snowPrewarmScheduled = false;
 
 export function scheduleSnowPrewarm() {
   if (snowPrewarmScheduled) return;
-
-  // Skip snow prewarming on mobile to reduce memory pressure
-  const isMobile = window.innerWidth <= 900;
-  if (isMobile) return;
-
   snowPrewarmScheduled = true;
+
+  const isMobile = window.innerWidth <= 900;
+
+  // Always prewarm the basic snow shader (lightweight) to avoid disco mode delay
   const run = () => prewarmSnow(renderer);
   if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(run, { timeout: 1200 });
   } else {
     setTimeout(run, 300);
   }
+
+  // Skip accumulation prewarming on mobile to reduce memory pressure
+  if (isMobile) return;
+
   const accumulationRun = () => prewarmSnowAccumulation();
   if (typeof window.requestIdleCallback === 'function') {
     window.requestIdleCallback(accumulationRun, { timeout: 1500 });
