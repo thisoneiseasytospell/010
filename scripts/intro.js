@@ -35,12 +35,13 @@ export function clearIntroPromptTimers() {
 // Show intro prompt immediately (called when user tries to scroll)
 export function showIntroPromptNow() {
   if (!state.introActive || !introPrompt) return;
-  // Clear the 5-second timer since we're showing now
-  if (state.introPromptTimer) {
-    clearTimeout(state.introPromptTimer);
-    state.introPromptTimer = null;
-  }
+
+  // Clear any existing hide timer and show immediately
+  clearIntroPromptTimers();
   introPrompt.classList.add('visible');
+
+  // Hide after 4 seconds
+  scheduleIntroPromptHide();
 }
 
 // Setup listener for scroll attempts during intro
@@ -64,7 +65,7 @@ export function setupIntroVideo() {
   const isMobile = window.innerWidth <= 900;
 
   // Set video source based on device
-  const videoSrc = isMobile ? './demo-mobile.mp4' : './demonew.mp4';
+  const videoSrc = isMobile ? './o916demo.mp4' : './demonew.mp4';
   introVideo.src = videoSrc;
 
   // Hide loading when video can play
@@ -106,7 +107,7 @@ export function scheduleIntroPromptHide() {
   state.introPromptHideTimer = setTimeout(() => {
     introPrompt.classList.remove('visible');
     state.introPromptHideTimer = null;
-  }, 2000);
+  }, 4000);
 }
 
 export function updateIntroPrompt() {

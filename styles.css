@@ -149,21 +149,11 @@ body:not(.intro-active) {
   opacity: 0;
   pointer-events: none;
   z-index: 2001;
+  transition: opacity 0.5s ease-out;
 }
 
 #intro-cursor-prompt.visible {
-  animation: promptBlink 12s ease-in-out forwards;
-}
-
-@keyframes promptBlink {
-  /* Wait ~11 sec, blink twice, stay visible */
-  0% { opacity: 0; }
-  91% { opacity: 0; }
-  92% { opacity: 1; }
-  94% { opacity: 0; }
-  96% { opacity: 1; }
-  98% { opacity: 0; }
-  100% { opacity: 1; }
+  opacity: 1;
 }
 
 #scene-container.physics-mode {

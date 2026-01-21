@@ -85,15 +85,11 @@ export function checkLoadingComplete() {
     state.hasCompletedInitialLoad = true;
     prewarmGridModels();
     scheduleSnowPrewarm();
-    // Setup intro prompt (will be shown after delay or on scroll attempt)
+    // Setup intro prompt text (will only be shown when user tries to scroll)
     const introPrompt = document.getElementById('intro-cursor-prompt');
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    if (introPrompt && state.introActive) {
+    if (introPrompt) {
       introPrompt.textContent = isTouchDevice ? 'tap to enter' : 'click to enter';
-      // Show immediately - CSS animation handles the 11sec wait + blink
-      if (state.introActive) {
-        introPrompt.classList.add('visible');
-      }
     }
   }
 }
