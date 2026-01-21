@@ -6,6 +6,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: 'ABCDiatype';
+  src: url('./ABCDiatype-Regular.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --text: #f5f7ff;
   font-family: 'WTSkrappaTRIAL', 'Inter', 'Helvetica Neue', Arial, sans-serif;
@@ -598,9 +606,10 @@ body:not(.intro-active) {
 }
 
 .text-line {
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'ABCDiatype', 'Helvetica Neue', Arial, sans-serif;
   font-size: clamp(0.9rem, 2vw, 1.1rem);
   line-height: 1.7;
+  letter-spacing: -0.05em;
   color: #08090d;
   margin: 0;
 }
@@ -647,11 +656,38 @@ body:not(.intro-active) {
 #page-footer {
   margin-top: auto;
   padding-top: 4rem;
+  font-family: 'ABCDiatype', 'Helvetica Neue', Arial, sans-serif;
   font-size: 10px;
   color: #08090d;
   opacity: 0.4;
   letter-spacing: 0.03em;
   text-align: center;
+}
+
+#research-link {
+  margin-top: 2.5rem;
+  font-family: 'ABCDiatype', 'Helvetica Neue', Arial, sans-serif;
+  font-size: clamp(0.9rem, 2vw, 1.1rem);
+  line-height: 1.7;
+  color: #08090d;
+  width: 100%;
+  max-width: 640px;
+  align-self: center;
+  text-align: left;
+  text-decoration: none;
+}
+
+#research-link:hover {
+  text-decoration: underline;
+}
+
+#page-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#page-footer a:hover {
+  text-decoration: underline;
 }
 
 /* Dark Mode Styles */
@@ -751,6 +787,10 @@ body.dark-mode #page-footer {
   color: #f5f7ff;
 }
 
+body.dark-mode #research-link {
+  color: #f5f7ff;
+}
+
 /* Party Mode Effects */
 body.party-mode .text-word.word-revealed {
   animation: partyText 0.3s infinite;
@@ -766,4 +806,3 @@ body.party-mode .text-word.word-revealed {
   84% { color: #ffff00; }
   100% { color: #ff0066; }
 }
-
