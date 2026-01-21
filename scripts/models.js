@@ -90,12 +90,12 @@ export function checkLoadingComplete() {
     const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     if (introPrompt && state.introActive) {
       introPrompt.textContent = isTouchDevice ? 'tap to enter' : 'click to enter';
-      // Show at end of video (10 seconds)
+      // Show after 12 seconds
       state.introPromptTimer = setTimeout(() => {
         if (state.introActive) {
           introPrompt.classList.add('visible');
         }
-      }, 10000);
+      }, 12000);
     }
   }
 }
