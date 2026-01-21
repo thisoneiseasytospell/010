@@ -45,6 +45,7 @@ body.intro-active {
   overscroll-behavior: none;
   position: fixed;
   width: 100%;
+  background: #000000 !important; /* Black background during intro */
 }
 
 body:not(.intro-active) {
@@ -61,11 +62,13 @@ body:not(.intro-active) {
 
 #intro-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh; /* Dynamic viewport height for mobile */
+  /* Extend beyond viewport to cover safe areas */
+  top: -50px;
+  left: -50px;
+  right: -50px;
+  bottom: -50px;
+  width: auto;
+  height: auto;
   background: #000000;
   display: flex;
   align-items: center;
@@ -84,14 +87,12 @@ body:not(.intro-active) {
 }
 
 #intro-overlay video {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 100%;
-  min-height: 100%;
-  width: auto;
-  height: auto;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
   object-fit: cover;
   pointer-events: none;
 }
